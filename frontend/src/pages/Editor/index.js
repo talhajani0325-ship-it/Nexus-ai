@@ -1,6 +1,7 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import MonacoEditor from '@monaco-editor/react';
+import { sendMessage } from '../../utils/gemini';
 
 const C = {
   bg: '#0a0a0f',
@@ -52,6 +53,13 @@ const INITIAL_TREE = [
     type: 'file',
   },
   { id: 'file-readme', name: 'README.md', type: 'file' },
+];
+
+const AI_COMMANDS = [
+  { id: 'explain', label: 'Explain this code' },
+  { id: 'fix', label: 'Fix this bug' },
+  { id: 'generate', label: 'Generate code' },
+  { id: 'refactor', label: 'Refactor code' },
 ];
 
 const INITIAL_CONTENTS = {
@@ -171,11 +179,17 @@ function EditorPage() {
     '> Ready. Click Run to execute your code.',
   ]);
   const [aiMessages, setAiMessages] = useState([
-    { role: 'ai', text: 'Hello! I am Nexus AI. Ask me to explain, refactor, or generate code.' },
+    { role: 'ai', text: 'Hello! I am Nexus AI. Ask me to explain, refactor, or generate code — or use the quick commands below.' },
   ]);
   const [aiInput, setAiInput] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
+  const chatEndRef = useRef(null);
 
   const editorValue = fileContents[activeFile.id] ?? '';
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [aiMessages, aiLoading]);
 
   const setEditorValue = useCallback(
     (value) => {
@@ -246,23 +260,54 @@ function EditorPage() {
     appendTerminal(`> Saved ${activeFile.name}`);
   };
 
+  const runAiChat = useCallback(
+    async (text, command = null) => {
+      const userText = text.trim();
+      if (!userText || aiLoading) return;
+
+      setAiMessages((prev) => [...prev, { role: 'user', text: userText }]);
+      setAiInput('');
+      setAiLoading(true);
+
+      try {
+        const { text: reply, provider } = await sendMessage({
+          userMessage: userText,
+          command,
+          code: editorValue,
+          filename: activeFile.name,
+          language,
+        });
+
+        setAiMessages((prev) => [
+          ...prev,
+          {
+            role: 'ai',
+            text: reply,
+            provider,
+          },
+        ]);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Something went wrong.';
+        setAiMessages((prev) => [
+          ...prev,
+          { role: 'ai', text: `Sorry, I could not respond: ${message}`, error: true },
+        ]);
+      } finally {
+        setAiLoading(false);
+      }
+    },
+    [aiLoading, editorValue, activeFile.name, language]
+  );
+
   const handleAiSend = (e) => {
     e.preventDefault();
-    const text = aiInput.trim();
-    if (!text) return;
+    runAiChat(aiInput);
+  };
 
-    setAiMessages((prev) => [...prev, { role: 'user', text }]);
-    setAiInput('');
-
-    setTimeout(() => {
-      setAiMessages((prev) => [
-        ...prev,
-        {
-          role: 'ai',
-          text: `I can help with "${text}". In production this connects to Nexus AI — try asking for a refactor, bug fix, or new function for ${activeFile.name}.`,
-        },
-      ]);
-    }, 600);
+  const handleAiCommand = (commandId) => {
+    const cmd = AI_COMMANDS.find((c) => c.id === commandId);
+    if (!cmd) return;
+    runAiChat(cmd.label, commandId);
   };
 
   const toolbarBtn = (variant) => ({
@@ -296,6 +341,7 @@ function EditorPage() {
         .nx-ed-select:focus { border-color: rgba(34, 211, 238, 0.5) !important; outline: none; }
         .nx-ed-ai-input:focus { border-color: rgba(34, 211, 238, 0.5) !important; box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.1); outline: none; }
         .nx-ed-icon-btn:hover { background: rgba(255,255,255,0.06) !important; }
+        @keyframes nx-spin { to { transform: rotate(360deg); } }
       `}</style>
 
       <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: C.bg, color: C.text, fontFamily: font, overflow: 'hidden' }}>
@@ -505,6 +551,31 @@ function EditorPage() {
                 <div style={{ fontSize: '12px', color: C.textDim }}>Code assistant</div>
               </div>
 
+              <div style={{ padding: '10px 12px', display: 'flex', flexWrap: 'wrap', gap: '6px', borderBottom: `1px solid ${C.border}` }}>
+                {AI_COMMANDS.map((cmd) => (
+                  <button
+                    key={cmd.id}
+                    type="button"
+                    disabled={aiLoading}
+                    onClick={() => handleAiCommand(cmd.id)}
+                    style={{
+                      padding: '6px 10px',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      fontFamily: font,
+                      color: C.cyan,
+                      background: 'rgba(34, 211, 238, 0.08)',
+                      border: '1px solid rgba(34, 211, 238, 0.25)',
+                      borderRadius: '8px',
+                      cursor: aiLoading ? 'not-allowed' : 'pointer',
+                      opacity: aiLoading ? 0.5 : 1,
+                    }}
+                  >
+                    {cmd.label}
+                  </button>
+                ))}
+              </div>
+
               <div style={{ flex: 1, overflowY: 'auto', padding: '12px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {aiMessages.map((msg, i) => (
                   <div
@@ -516,17 +587,63 @@ function EditorPage() {
                       borderRadius: msg.role === 'user' ? '12px 12px 4px 12px' : '12px 12px 12px 4px',
                       fontSize: '13px',
                       lineHeight: 1.55,
-                      color: C.text,
+                      whiteSpace: 'pre-wrap',
+                      wordBreak: 'break-word',
+                      color: msg.error ? '#fca5a5' : C.text,
                       background:
                         msg.role === 'user'
                           ? 'linear-gradient(135deg, rgba(6,182,212,0.25), rgba(124,58,237,0.2))'
-                          : 'rgba(18, 18, 28, 0.9)',
-                      border: `1px solid ${msg.role === 'user' ? 'rgba(34, 211, 238, 0.2)' : C.border}`,
+                          : msg.error
+                            ? 'rgba(127, 29, 29, 0.35)'
+                            : 'rgba(18, 18, 28, 0.9)',
+                      border: `1px solid ${
+                        msg.role === 'user'
+                          ? 'rgba(34, 211, 238, 0.2)'
+                          : msg.error
+                            ? 'rgba(239, 68, 68, 0.35)'
+                            : C.border
+                      }`,
                     }}
                   >
                     {msg.text}
+                    {msg.provider && msg.role === 'ai' && !msg.error && (
+                      <div style={{ marginTop: '8px', fontSize: '10px', color: C.textDim, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        {msg.provider}
+                      </div>
+                    )}
                   </div>
                 ))}
+
+                {aiLoading && (
+                  <div
+                    style={{
+                      alignSelf: 'flex-start',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      padding: '10px 14px',
+                      borderRadius: '12px 12px 12px 4px',
+                      background: 'rgba(18, 18, 28, 0.9)',
+                      border: `1px solid ${C.border}`,
+                      fontSize: '13px',
+                      color: C.textMuted,
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: '16px',
+                        height: '16px',
+                        border: '2px solid rgba(34, 211, 238, 0.25)',
+                        borderTopColor: C.cyan,
+                        borderRadius: '50%',
+                        animation: 'nx-spin 0.8s linear infinite',
+                        flexShrink: 0,
+                      }}
+                    />
+                    Nexus AI is thinking...
+                  </div>
+                )}
+                <div ref={chatEndRef} />
               </div>
 
               <form onSubmit={handleAiSend} style={{ padding: '12px', borderTop: `1px solid ${C.border}` }}>
@@ -536,6 +653,7 @@ function EditorPage() {
                   onChange={(e) => setAiInput(e.target.value)}
                   placeholder="Ask Nexus AI..."
                   rows={3}
+                  disabled={aiLoading}
                   style={{
                     width: '100%',
                     resize: 'none',
@@ -558,6 +676,7 @@ function EditorPage() {
                 />
                 <button
                   type="submit"
+                  disabled={aiLoading || !aiInput.trim()}
                   style={{
                     width: '100%',
                     padding: '10px',
@@ -567,12 +686,13 @@ function EditorPage() {
                     color: '#fff',
                     border: 'none',
                     borderRadius: '10px',
-                    cursor: 'pointer',
+                    cursor: aiLoading || !aiInput.trim() ? 'not-allowed' : 'pointer',
+                    opacity: aiLoading || !aiInput.trim() ? 0.55 : 1,
                     background: 'linear-gradient(135deg, #06b6d4, #7c3aed)',
                     boxShadow: '0 0 16px rgba(34, 211, 238, 0.3)',
                   }}
                 >
-                  Send
+                  {aiLoading ? 'Waiting...' : 'Send'}
                 </button>
               </form>
             </aside>
