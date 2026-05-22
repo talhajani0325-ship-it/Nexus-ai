@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 
 /* ─── Design tokens ─── */
 const C = {
@@ -322,13 +323,13 @@ function HomePage() {
               justifyContent: 'space-between',
             }}
           >
-            <a href="/" style={{ display: 'flex', alignItems: 'center', gap: '14px', textDecoration: 'none' }}>
+            <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: '14px', textDecoration: 'none' }}>
               <NXBadge size={42} />
               <span style={{ fontSize: '20px', fontWeight: 700, letterSpacing: '-0.02em' }}>
                 <span style={{ color: C.text }}>Nexus </span>
                 <span style={gradientText}>AI</span>
               </span>
-            </a>
+            </Link>
 
             <div className="nx-nav-links" style={{ alignItems: 'center', gap: '36px' }}>
               <button
@@ -356,9 +357,9 @@ function HomePage() {
               </a>
             </div>
 
-            <a href="#get-started" className="nx-glow-btn" style={{ ...glowBtn, padding: '10px 22px', fontSize: '14px' }}>
+            <Link to="/login" className="nx-glow-btn" style={{ ...glowBtn, padding: '10px 22px', fontSize: '14px' }}>
               Get Started
-            </a>
+            </Link>
           </div>
         </nav>
 
@@ -423,9 +424,9 @@ function HomePage() {
             </p>
 
             <div className="nx-hero-actions">
-              <a href="#get-started" className="nx-glow-btn" style={glowBtn}>
+              <Link to="/login" className="nx-glow-btn" style={glowBtn}>
                 Get Started <ArrowIcon />
-              </a>
+              </Link>
               <button
                 type="button"
                 onClick={scrollToFeatures}
@@ -608,9 +609,9 @@ function HomePage() {
             <p style={{ position: 'relative', margin: '0 auto 32px', maxWidth: '480px', fontSize: '17px', color: C.textMuted, lineHeight: 1.6 }}>
               Join thousands of developers using Nexus AI to write better software, faster. Start free—no credit card required.
             </p>
-            <a href="#get-started" className="nx-glow-btn" style={{ ...glowBtn, position: 'relative', padding: '16px 40px', fontSize: '18px' }}>
+            <Link to="/login" className="nx-glow-btn" style={{ ...glowBtn, position: 'relative', padding: '16px 40px', fontSize: '18px' }}>
               Get Started <ArrowIcon />
-            </a>
+            </Link>
           </div>
         </section>
 
