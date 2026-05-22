@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../utils/supabase';
 import { isEmailVerified } from '../../utils/auth';
@@ -153,6 +153,7 @@ const messageBox = (type) => ({
 
 function AuthPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { session, loading: authLoading } = useAuth();
   const [mode, setMode] = useState('login');
   const [form, setForm] = useState({ name: '', email: '', password: '' });
@@ -161,6 +162,14 @@ function AuthPage() {
   const [success, setSuccess] = useState('');
 
   const isLogin = mode === 'login';
+
+  useEffect(() => {
+    const logoutMessage = location.state?.logoutMessage || sessionStorage.getItem('logoutMessage');
+    if (logoutMessage) {
+      setSuccess(logoutMessage);
+      sessionStorage.removeItem('logoutMessage');
+    }
+  }, [location.state]);
 
   useEffect(() => {
     if (!authLoading && session) {

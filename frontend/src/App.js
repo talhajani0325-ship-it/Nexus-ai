@@ -4,6 +4,8 @@ import ProtectedRoute from './components/ProtectedRoute';
 import HomePage from './pages/Home';
 import AuthPage from './pages/Auth';
 import DashboardPage from './pages/Dashboard';
+import EditorPage from './pages/Editor';
+import SettingsPage from './pages/Settings';
 
 function App() {
   return (
@@ -17,6 +19,22 @@ function App() {
             element={
               <ProtectedRoute>
                 <DashboardPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/editor"
+            element={
+              <ProtectedRoute>
+                <EditorPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/settings"
+            element={
+              <ProtectedRoute>
+                <SettingsPage />
               </ProtectedRoute>
             }
           />

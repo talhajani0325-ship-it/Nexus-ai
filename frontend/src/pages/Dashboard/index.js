@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { getInitials, getUserDisplayName } from '../../utils/auth';
@@ -71,31 +71,59 @@ const MENU_ITEMS = [
       </svg>
     ),
   },
-  {
-    id: 'Settings',
-    label: 'Settings',
-    icon: (
-      <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" />
-        <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-      </svg>
-    ),
-  },
 ];
 
-const STATS = [
-  { label: 'Projects', value: '12', change: '+2 this month', color: '#22d3ee' },
-  { label: 'Files', value: '248', change: 'Across all repos', color: '#a78bfa' },
-  { label: 'AI Requests', value: '1,432', change: '+18% vs last week', color: '#34d399' },
-  { label: 'Learning Progress', value: '68%', change: 'Academy track', color: '#fbbf24' },
-];
+const SETTINGS_ITEM = {
+  id: 'Settings',
+  label: 'Settings',
+  icon: (
+    <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+    </svg>
+  ),
+};
 
-const RECENT_PROJECTS = [
-  { name: 'nexus-api-gateway', lang: 'TypeScript', updated: '2 hours ago', status: 'Active' },
-  { name: 'ml-pipeline-v2', lang: 'Python', updated: 'Yesterday', status: 'Review' },
-  { name: 'design-system', lang: 'React', updated: '3 days ago', status: 'Active' },
-  { name: 'mobile-client', lang: 'Swift', updated: '1 week ago', status: 'Paused' },
-];
+/** Default metrics for new users — replace with Supabase queries later */
+function getDefaultUserMetrics() {
+  return {
+    projectCount: 0,
+    fileCount: 0,
+    aiRequestCount: 0,
+    learningProgress: 0,
+    recentProjects: [],
+  };
+}
+
+function buildStats(metrics) {
+  const { projectCount, fileCount, aiRequestCount, learningProgress } = metrics;
+  return [
+    {
+      label: 'Projects',
+      value: String(projectCount),
+      change: projectCount === 0 ? 'No projects yet' : `${projectCount} total`,
+      color: '#22d3ee',
+    },
+    {
+      label: 'Files',
+      value: String(fileCount),
+      change: fileCount === 0 ? 'No files yet' : 'Across all repos',
+      color: '#a78bfa',
+    },
+    {
+      label: 'AI Requests',
+      value: String(aiRequestCount),
+      change: aiRequestCount === 0 ? 'No requests yet' : `${aiRequestCount} total`,
+      color: '#34d399',
+    },
+    {
+      label: 'Learning Progress',
+      value: `${learningProgress}%`,
+      change: learningProgress === 0 ? 'Start learning in Academy' : 'Academy track',
+      color: '#fbbf24',
+    },
+  ];
+}
 
 const QUICK_ACTIONS = [
   { label: 'New Project', color: '#22d3ee' },
@@ -203,17 +231,67 @@ function DashboardPage() {
   const { user, signOut } = useAuth();
   const [activeNav, setActiveNav] = useState('Home');
   const [searchQuery, setSearchQuery] = useState('');
+  const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const settingsRef = useRef(null);
 
   const userName = getUserDisplayName(user);
   const userEmail = user?.email || 'Your Account';
   const firstName = userName.split(' ')[0];
 
-  const handleLogout = async () => {
+  // TODO: load from Supabase per user
+  const userMetrics = useMemo(() => getDefaultUserMetrics(), []);
+  const stats = useMemo(() => buildStats(userMetrics), [userMetrics]);
+  const recentProjects = userMetrics.recentProjects;
+  const hasProjects = recentProjects.length > 0;
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (settingsRef.current && !settingsRef.current.contains(e.target)) {
+        setSettingsMenuOpen(false);
+      }
+    };
+    if (settingsMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [settingsMenuOpen]);
+
+  const performLogout = async () => {
     setLoggingOut(true);
-    await signOut();
-    navigate('/login', { replace: true });
+    setShowLogoutConfirm(false);
+    setSettingsMenuOpen(false);
+    try {
+      await signOut();
+      sessionStorage.removeItem('logoutMessage');
+      sessionStorage.setItem('logoutMessage', 'Logged out successfully');
+      navigate('/login', { replace: true, state: { logoutMessage: 'Logged out successfully' } });
+    } catch {
+      setLoggingOut(false);
+    }
   };
+
+  const menuItemBtn = (isActive) => ({
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    width: '100%',
+    padding: '12px 14px',
+    fontSize: '14px',
+    fontWeight: isActive ? 600 : 500,
+    fontFamily: font,
+    color: isActive ? C.cyan : C.textMuted,
+    background: isActive
+      ? 'linear-gradient(90deg, rgba(34, 211, 238, 0.15) 0%, rgba(34, 211, 238, 0.03) 100%)'
+      : 'transparent',
+    border: isActive ? '1px solid rgba(34, 211, 238, 0.25)' : '1px solid transparent',
+    borderRadius: '10px',
+    cursor: 'pointer',
+    textAlign: 'left',
+    boxShadow: isActive ? '0 0 20px rgba(34, 211, 238, 0.12)' : 'none',
+    transition: 'all 0.2s ease',
+  });
 
   return (
     <>
@@ -299,29 +377,15 @@ function DashboardPage() {
                 <button
                   key={item.id}
                   type="button"
-                  onClick={() => setActiveNav(item.id)}
-                  className={isActive ? 'nx-dash-nav nx-dash-nav-active' : 'nx-dash-nav'}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    width: '100%',
-                    padding: '12px 14px',
-                    marginBottom: '4px',
-                    fontSize: '14px',
-                    fontWeight: isActive ? 600 : 500,
-                    fontFamily: font,
-                    color: isActive ? C.cyan : C.textMuted,
-                    background: isActive
-                      ? 'linear-gradient(90deg, rgba(34, 211, 238, 0.15) 0%, rgba(34, 211, 238, 0.03) 100%)'
-                      : 'transparent',
-                    border: isActive ? '1px solid rgba(34, 211, 238, 0.25)' : '1px solid transparent',
-                    borderRadius: '10px',
-                    cursor: 'pointer',
-                    textAlign: 'left',
-                    boxShadow: isActive ? '0 0 20px rgba(34, 211, 238, 0.12), inset 0 0 0 1px rgba(34, 211, 238, 0.08)' : 'none',
-                    transition: 'all 0.2s ease',
+                  onClick={() => {
+                    if (item.id === 'Editor') {
+                      navigate('/editor');
+                      return;
+                    }
+                    setActiveNav(item.id);
                   }}
+                  className={isActive ? 'nx-dash-nav nx-dash-nav-active' : 'nx-dash-nav'}
+                  style={{ ...menuItemBtn(isActive), marginBottom: '4px' }}
                 >
                   <span style={{ color: isActive ? C.cyan : C.textDim, display: 'flex' }}>{item.icon}</span>
                   {item.label}
@@ -330,27 +394,111 @@ function DashboardPage() {
             })}
           </nav>
 
-          {/* User profile */}
-          <div
-            style={{
-              margin: '12px',
-              padding: '14px',
-              borderRadius: '12px',
-              border: `1px solid ${C.border}`,
-              background: 'rgba(18, 18, 28, 0.6)',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <UserAvatar name={userName} size={40} />
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: '14px', fontWeight: 600, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {userName}
+          {/* Settings (bottom) */}
+          <div ref={settingsRef} style={{ margin: '12px', paddingTop: '12px', borderTop: `1px solid ${C.border}`, position: 'relative' }}>
+            {settingsMenuOpen && (
+              <div
+                style={{
+                  position: 'absolute',
+                  bottom: '100%',
+                  left: 0,
+                  right: 0,
+                  marginBottom: '8px',
+                  padding: '8px',
+                  borderRadius: '12px',
+                  border: `1px solid ${C.border}`,
+                  background: C.bgCard,
+                  boxShadow: '0 16px 48px rgba(0, 0, 0, 0.5), 0 0 1px rgba(255,255,255,0.08)',
+                  zIndex: 60,
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    padding: '12px',
+                    marginBottom: '4px',
+                    borderRadius: '8px',
+                    background: 'rgba(10, 10, 15, 0.5)',
+                  }}
+                >
+                  <UserAvatar name={userName} size={40} />
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: '14px', fontWeight: 600, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {userName}
+                    </div>
+                    <div style={{ fontSize: '12px', color: C.textDim, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {userEmail}
+                    </div>
+                  </div>
                 </div>
-                <div style={{ fontSize: '12px', color: C.textDim, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {userEmail}
-                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSettingsMenuOpen(false);
+                    navigate('/settings');
+                  }}
+                  className="nx-dash-nav"
+                  style={{
+                    ...menuItemBtn(false),
+                    marginBottom: '4px',
+                    border: '1px solid transparent',
+                    background: 'transparent',
+                  }}
+                >
+                  <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+                  </svg>
+                  Account Settings
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSettingsMenuOpen(false);
+                    setShowLogoutConfirm(true);
+                  }}
+                  className="nx-dash-nav"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    width: '100%',
+                    padding: '12px 14px',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    fontFamily: font,
+                    color: '#f87171',
+                    background: 'rgba(239, 68, 68, 0.08)',
+                    border: '1px solid rgba(239, 68, 68, 0.25)',
+                    borderRadius: '10px',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                  }}
+                >
+                  <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" />
+                  </svg>
+                  Logout
+                </button>
               </div>
-            </div>
+            )}
+            <button
+              type="button"
+              onClick={() => setSettingsMenuOpen((open) => !open)}
+              className={settingsMenuOpen ? 'nx-dash-nav nx-dash-nav-active' : 'nx-dash-nav'}
+              style={{
+                ...menuItemBtn(settingsMenuOpen),
+                border: settingsMenuOpen ? '1px solid rgba(34, 211, 238, 0.25)' : `1px solid ${C.border}`,
+                background: settingsMenuOpen
+                  ? 'linear-gradient(90deg, rgba(34, 211, 238, 0.15) 0%, rgba(34, 211, 238, 0.03) 100%)'
+                  : 'rgba(18, 18, 28, 0.6)',
+              }}
+            >
+              <span style={{ color: settingsMenuOpen ? C.cyan : C.textDim, display: 'flex' }}>{SETTINGS_ITEM.icon}</span>
+              {SETTINGS_ITEM.label}
+              <span style={{ marginLeft: 'auto', fontSize: '10px', color: C.textDim }}>{settingsMenuOpen ? '▼' : '▲'}</span>
+            </button>
           </div>
         </aside>
 
@@ -446,56 +594,6 @@ function DashboardPage() {
 
           {/* Content */}
           <main style={{ flex: 1, padding: '32px 28px', overflowY: 'auto' }}>
-            {activeNav === 'Settings' ? (
-              <section
-                style={{
-                  maxWidth: '560px',
-                  padding: '28px',
-                  borderRadius: '16px',
-                  border: `1px solid ${C.border}`,
-                  background: C.bgCard,
-                }}
-              >
-                <h1 style={{ margin: '0 0 8px', fontSize: '24px', fontWeight: 700 }}>Settings</h1>
-                <p style={{ margin: '0 0 28px', fontSize: '15px', color: C.textMuted }}>
-                  Manage your account and session.
-                </p>
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '16px',
-                    padding: '20px',
-                    marginBottom: '24px',
-                    borderRadius: '12px',
-                    border: `1px solid ${C.border}`,
-                    background: 'rgba(10, 10, 15, 0.5)',
-                  }}
-                >
-                  <UserAvatar name={userName} size={48} />
-                  <div>
-                    <div style={{ fontSize: '16px', fontWeight: 600, color: C.text }}>{userName}</div>
-                    <div style={{ fontSize: '14px', color: C.textDim }}>{userEmail}</div>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleLogout}
-                  disabled={loggingOut}
-                  className="nx-dash-glow-btn"
-                  style={{
-                    ...glowBtn,
-                    background: 'linear-gradient(135deg, #dc2626 0%, #991b1b 100%)',
-                    boxShadow: '0 0 20px rgba(220, 38, 38, 0.35)',
-                    opacity: loggingOut ? 0.7 : 1,
-                    cursor: loggingOut ? 'not-allowed' : 'pointer',
-                  }}
-                >
-                  {loggingOut ? 'Signing out...' : 'Log Out'}
-                </button>
-              </section>
-            ) : (
-              <>
             <div style={{ marginBottom: '32px' }}>
               <h1 style={{ margin: '0 0 8px', fontSize: '28px', fontWeight: 700, letterSpacing: '-0.02em' }}>
                 Welcome back, <span style={gradientText}>{firstName}</span>
@@ -507,7 +605,7 @@ function DashboardPage() {
 
             {/* Stats */}
             <div className="nx-stats-grid" style={{ marginBottom: '32px' }}>
-              {STATS.map((stat) => (
+              {stats.map((stat) => (
                 <div
                   key={stat.label}
                   style={{
@@ -541,23 +639,67 @@ function DashboardPage() {
               >
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
                   <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>Recent Projects</h2>
-                  <button
-                    type="button"
+                  {hasProjects && (
+                    <button
+                      type="button"
+                      style={{
+                        fontSize: '13px',
+                        fontWeight: 500,
+                        color: C.cyan,
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        fontFamily: font,
+                      }}
+                    >
+                      View all
+                    </button>
+                  )}
+                </div>
+                {!hasProjects ? (
+                  <div
                     style={{
-                      fontSize: '13px',
-                      fontWeight: 500,
-                      color: C.cyan,
-                      background: 'none',
-                      border: 'none',
-                      cursor: 'pointer',
-                      fontFamily: font,
+                      textAlign: 'center',
+                      padding: '40px 24px',
+                      borderRadius: '12px',
+                      border: `1px dashed ${C.border}`,
+                      background: 'rgba(10, 10, 15, 0.4)',
                     }}
                   >
-                    View all
-                  </button>
-                </div>
+                    <div
+                      style={{
+                        width: '48px',
+                        height: '48px',
+                        margin: '0 auto 16px',
+                        borderRadius: '12px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        background: 'linear-gradient(135deg, rgba(34,211,238,0.12), rgba(167,139,250,0.12))',
+                        border: `1px solid ${C.border}`,
+                        color: C.cyan,
+                      }}
+                    >
+                      <svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75" />
+                      </svg>
+                    </div>
+                    <p style={{ margin: '0 0 20px', fontSize: '15px', color: C.textMuted }}>No projects yet</p>
+                    <button
+                      type="button"
+                      onClick={() => navigate('/editor')}
+                      className="nx-dash-glow-btn"
+                      style={{
+                        ...glowBtn,
+                        margin: '0 auto',
+                      }}
+                    >
+                      Create your first project
+                    </button>
+                  </div>
+                ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {RECENT_PROJECTS.map((project) => (
+                  {recentProjects.map((project) => (
                     <div
                       key={project.name}
                       className="nx-dash-project"
@@ -625,6 +767,7 @@ function DashboardPage() {
                     </div>
                   ))}
                 </div>
+                )}
               </section>
 
               {/* Quick Actions */}
@@ -642,6 +785,7 @@ function DashboardPage() {
                     <button
                       key={action.label}
                       type="button"
+                      onClick={() => action.label === 'Open Editor' && navigate('/editor')}
                       className="nx-dash-action"
                       style={{
                         padding: '20px 16px',
@@ -681,11 +825,93 @@ function DashboardPage() {
                 </div>
               </section>
             </div>
-              </>
-            )}
           </main>
         </div>
       </div>
+
+      {/* Logout confirmation modal */}
+      {showLogoutConfirm && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 200,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '24px',
+            background: 'rgba(0, 0, 0, 0.65)',
+            backdropFilter: 'blur(4px)',
+          }}
+          onClick={() => !loggingOut && setShowLogoutConfirm(false)}
+          role="presentation"
+        >
+          <div
+            role="dialog"
+            aria-labelledby="logout-dialog-title"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%',
+              maxWidth: '400px',
+              padding: '28px',
+              borderRadius: '16px',
+              border: `1px solid ${C.border}`,
+              background: C.bgCard,
+              boxShadow: '0 24px 80px rgba(0, 0, 0, 0.6)',
+            }}
+          >
+            <h2 id="logout-dialog-title" style={{ margin: '0 0 12px', fontSize: '20px', fontWeight: 700, color: C.text }}>
+              Log out?
+            </h2>
+            <p style={{ margin: '0 0 24px', fontSize: '15px', color: C.textMuted, lineHeight: 1.5 }}>
+              Are you sure you want to logout?
+            </p>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                type="button"
+                onClick={() => setShowLogoutConfirm(false)}
+                disabled={loggingOut}
+                style={{
+                  flex: 1,
+                  padding: '12px 20px',
+                  fontSize: '15px',
+                  fontWeight: 600,
+                  fontFamily: font,
+                  color: C.textMuted,
+                  background: 'rgba(255, 255, 255, 0.06)',
+                  border: `1px solid ${C.border}`,
+                  borderRadius: '10px',
+                  cursor: loggingOut ? 'not-allowed' : 'pointer',
+                  opacity: loggingOut ? 0.6 : 1,
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={performLogout}
+                disabled={loggingOut}
+                style={{
+                  flex: 1,
+                  padding: '12px 20px',
+                  fontSize: '15px',
+                  fontWeight: 600,
+                  fontFamily: font,
+                  color: '#fff',
+                  background: 'linear-gradient(135deg, #dc2626 0%, #991b1b 100%)',
+                  border: '1px solid rgba(239, 68, 68, 0.4)',
+                  borderRadius: '10px',
+                  boxShadow: '0 0 20px rgba(220, 38, 38, 0.35)',
+                  cursor: loggingOut ? 'not-allowed' : 'pointer',
+                  opacity: loggingOut ? 0.7 : 1,
+                }}
+              >
+                {loggingOut ? 'Logging out...' : 'Yes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
