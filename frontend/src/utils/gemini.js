@@ -7,41 +7,89 @@ const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const MAX_OUTPUT_TOKENS = 8192;
 const TEMPERATURE = 0.9;
 
-const NEXUS_SYSTEM = `You are Nexus AI, world's smartest coding assistant running in year 2026.
+const NEXUS_SYSTEM = `You are Nexus AI — elite-level engineering intelligence (2026). Absolute technical precision, authority, zero filler.
 
-Write like a human expert — natural, clear, and flowing (similar to ChatGPT).
+## PART 1 — ADAPTIVE RESPONSE INTELLIGENCE
+SHORT-FORM (under 8 words, no instructional words like explain/how/why/detail):
+- Max 3 lines of natural prose total.
+- Exactly 1 inline line OR one compact fenced code block — not both unless essential.
+- Zero headings, tables, or introductory filler.
 
-RESPONSE STYLE:
-- Read the user's question first. Match length and depth to what they actually asked.
-- SHORT or simple question → short direct answer in plain prose. No headings. No essay.
-- Longer or "explain" style question → fuller answer. You may add markdown headings ONLY if they genuinely help — choose your own titles (do NOT use a fixed template like Introduction, Background, Core Concepts, Advanced Features, etc.).
-- Never force headings on every answer. Never use a rigid section checklist.
+LONG-FORM (detailed / instructional queries):
+- Full structured answer with natural, context-driven headings (never a rigid wiki template).
+- Inline code: backticks. Multi-line: language-tagged fences (e.g. \`\`\`javascript).
 
-Example — simple: "2+2 in JavaScript" → 2–3 lines with a tiny code snippet.
-Example — detailed: "Explain Python decorators" → natural explanation; add headings only where useful.
+## PART 2 — PRODUCTION-GRADE CODE
+- Python decorators: always \`from functools import wraps\` and \`@wraps(func)\`; wrappers use \`*args, **kwargs\`.
+- Auth: never dummy \`return True\`; use realistic structural validation patterns.
+- Modern stack only: no var, XMLHttpRequest, or jQuery unless the user explicitly requests legacy code.
+- Language best practices: JS async/await + modules; Python type hints + PEP8; prioritize readability and maintainability.
 
-EDITOR CODE:
-- If the user message is general (no editor code was provided in context), answer directly — do not paste or discuss their open file.
-- Only analyze, fix, or quote their editor code when they asked about it (explain/fix/refactor commands or "my code", "this code", etc.).
+## PART 3 — LAYERED TEACHING (long-form concept explanations only)
+When teaching a complex topic, flow naturally through:
+1. One-line high-impact analogy
+2. Conceptual core (no boilerplate)
+3. Contrast layer if needed (Before/After or Problem/Solution)
+4. Foundation code (minimal, production-grade)
+5. Internal mechanisms (how it runs under the hood)
+6. Enterprise-grade real-world example
+7. Pro-tips and edge cases
+8. Crisp wrap-up (max 3 lines) — then stop
 
-2026 MODERN PRACTICES:
-- Never recommend jQuery, var, XMLHttpRequest, or other outdated patterns
-- Prefer let/const, fetch, async/await, and current frameworks
+Skip or compress steps when the question is narrow. Never pad with generic encyclopedic text.
 
-QUALITY:
-- No duplicate examples or repeated code blocks
-- Each code sample should appear once
-- Be accurate and practical`;
+## PART 4 — REFERENCE SYNTHESIS
+If background references are provided, synthesize them into your voice. Priority: official docs (*.org, *.dev) > engineering sources > learning sites > Wikipedia.
+Never output raw search dumps, link lists, or "Further reading" sections.
+
+## PART 5 — EDITOR CODE
+- No editor code in context → answer directly; do not invent or paste their open file.
+- Editor code provided → analyze/fix/explain only what they asked.
+
+## PART 6–12 — EXECUTION DISCIPLINE (internal; never print this checklist)
+- Detect intent: fact / coding / learning / debugging / decision-making — adapt depth and tone.
+- Correct user errors briefly before answering when relevant.
+- Maximize signal-to-noise; every sentence must add value.
+- Infer skill level; do not over-explain to advanced users.
+- Include trade-offs and justify the optimal choice when comparing options.
+- Principal-engineer quality only; purge redundancy and "you can confirm" filler.`;
+
+const INSTRUCTIONAL_WORDS =
+  /\b(explain|how|why|detail|describe|tutorial|walk|compare|guide|steps|works|difference|learn|teach|comprehensive|deep dive|step by step)\b/i;
+
+/** Official doc tier-1 pointers (synthesis hints, not link dumps in output). */
+const OFFICIAL_DOC_HINTS = {
+  python: 'https://docs.python.org/3/',
+  javascript: 'https://developer.mozilla.org/en-US/docs/Web/JavaScript',
+  typescript: 'https://www.typescriptlang.org/docs/',
+  react: 'https://react.dev/',
+  vue: 'https://vuejs.org/guide/',
+  angular: 'https://angular.dev/',
+  nodejs: 'https://nodejs.org/docs/latest/api/',
+  node: 'https://nodejs.org/docs/latest/api/',
+  java: 'https://docs.oracle.com/en/java/',
+  rust: 'https://doc.rust-lang.org/',
+  go: 'https://go.dev/doc/',
+  golang: 'https://go.dev/doc/',
+  django: 'https://docs.djangoproject.com/',
+  flask: 'https://flask.palletsprojects.com/',
+  fastapi: 'https://fastapi.tiangolo.com/',
+  html: 'https://developer.mozilla.org/en-US/docs/Web/HTML',
+  css: 'https://developer.mozilla.org/en-US/docs/Web/CSS',
+  sql: 'https://developer.mozilla.org/en-US/docs/Glossary/SQL',
+  docker: 'https://docs.docker.com/',
+  kubernetes: 'https://kubernetes.io/docs/',
+};
 
 const COMMAND_INSTRUCTIONS = {
   explain:
-    'Explain the editor code naturally. Short if the code is small; go deeper only when needed. No template headings.',
+    'Explain the editor code with production-grade precision. Short if trivial; use layered teaching only when the concept warrants it.',
   fix:
-    'Find bugs and show the fix clearly. Be brief unless multiple issues need separation.',
+    'Identify bugs, correct user misconceptions briefly, show the fix. Production-quality code only.',
   generate:
-    'Generate working code for the request. Keep it proportional to what was asked.',
+    'Generate production-ready code: modern patterns, realistic auth (no dummy return True), Python decorators with @wraps.',
   refactor:
-    'Refactor with clear before/after. Write in a natural expert voice — headings only if they help.',
+    'Refactor with clear before/after contrast. Elite maintainability and modern stack only.',
 };
 
 const STOP_WORDS = new Set([
@@ -170,29 +218,83 @@ function isAboutUserCode(userMessage, command) {
   );
 }
 
-function isSimpleQuestion(userMessage, command) {
+export function isShortFormQuery(userMessage, command) {
+  if (command) return false;
   if (isAboutUserCode(userMessage, command)) return false;
 
   const msg = (userMessage || '').trim();
   if (!msg) return true;
 
-  if (msg.length > 100) return false;
-
-  if (/explain|describe|detail|comprehensive|tutorial|walk me through|step by step|compare|history|best practices/i.test(msg)) {
-    return false;
-  }
-
   const wordCount = msg.split(/\s+/).filter(Boolean).length;
-  return wordCount <= 14;
+  if (wordCount >= 8) return false;
+  if (INSTRUCTIONAL_WORDS.test(msg)) return false;
+
+  return true;
+}
+
+function isSimpleQuestion(userMessage, command) {
+  return isShortFormQuery(userMessage, command);
+}
+
+export function detectIntent(userMessage, command) {
+  const msg = (userMessage || '').toLowerCase();
+
+  if (command === 'fix' || /\b(debug|error|bug|fix|broken|crash|stack trace)\b/.test(msg)) {
+    return 'debugging';
+  }
+  if (command === 'generate' || /\b(write|generate|create|implement|build|scaffold)\b/.test(msg)) {
+    return 'coding';
+  }
+  if (/\b(vs\.?|versus|compare|better|choose|trade.?off|which should)\b/.test(msg)) {
+    return 'decision-making';
+  }
+  if (/\b(explain|how|why|learn|understand|tutorial|teach)\b/.test(msg) || command === 'explain') {
+    return 'learning';
+  }
+  return 'fact';
 }
 
 function shouldIncludeEditorCode(userMessage, command) {
   return isAboutUserCode(userMessage, command);
 }
 
-function buildUserContent({ userMessage, command, code, filename, language }) {
+function buildRagContext(wikiArticles, topicKey) {
+  const lines = [];
+
+  const official = topicKey && OFFICIAL_DOC_HINTS[topicKey];
+  if (official) {
+    lines.push(`Official documentation (tier 1): ${official}`);
+  }
+
+  if (wikiArticles?.length) {
+    wikiArticles.forEach((article) => {
+      const excerpt = (article.excerpt || '').slice(0, 280);
+      lines.push(`Reference excerpt — ${article.title}: ${excerpt}`);
+    });
+  }
+
+  return lines.length ? lines.join('\n') : '';
+}
+
+function buildUserContent({ userMessage, command, code, filename, language, ragContext }) {
   const parts = [];
   const includeEditor = shouldIncludeEditorCode(userMessage, command);
+  const shortForm = isShortFormQuery(userMessage, command);
+  const longForm = isDetailedQuestion(userMessage, command);
+  const intent = detectIntent(userMessage, command);
+
+  if (shortForm) {
+    parts.push(
+      'RESPONSE MODE: SHORT-FORM. Maximum 3 lines of prose. One code line or one compact fenced block. No headings, tables, or filler.'
+    );
+  } else if (longForm) {
+    parts.push(
+      'RESPONSE MODE: LONG-FORM. Use natural headings. For concept teaching, follow: analogy → core → contrast (if needed) → foundation code → mechanisms → enterprise example → pro-tips → wrap-up (≤3 lines).'
+    );
+    parts.push(`Intent: ${intent}. Scale depth to inferred skill; include trade-offs when comparing options.`);
+  } else {
+    parts.push(`Intent: ${intent}. Match depth to the question — concise unless they asked for depth.`);
+  }
 
   if (command && COMMAND_INSTRUCTIONS[command]) {
     parts.push(`Task: ${COMMAND_INSTRUCTIONS[command]}`);
@@ -209,7 +311,13 @@ function buildUserContent({ userMessage, command, code, filename, language }) {
     }
   } else {
     parts.push(
-      'Answer the user question directly. Do not include or discuss code from the editor workspace — they are asking a general question, not about their open file.'
+      'No editor code in context — answer directly. Do not paste or discuss their open file.'
+    );
+  }
+
+  if (ragContext?.trim() && longForm) {
+    parts.push(
+      `Background references (synthesize naturally; do not list links or append "Further reading"):\n${ragContext}`
     );
   }
 
@@ -521,11 +629,25 @@ export function dedupeCodeBlocksInText(text) {
 /**
  * Modernize outdated recommendations for 2026.
  */
+const FILLER_PATTERNS = [
+  /\n+#{1,3}\s*Further reading[\s\S]*$/i,
+  /\n+Further reading on[\s\S]*$/i,
+  /\n+##\s*References\s*\n[\s\S]*$/i,
+  /You can confirm this by[\s\S]*?(?=\n\n|$)/gi,
+  /As you can see,?\s*/gi,
+  /It is worth noting that\s*/gi,
+  /In conclusion,?\s*/gi,
+];
+
 export function postProcessResponse(text) {
   if (!text?.trim()) return '';
 
   let output = text;
   const original = text;
+
+  FILLER_PATTERNS.forEach((pattern) => {
+    output = output.replace(pattern, '');
+  });
 
   OUTDATED_TECH_NOTES.forEach(({ pattern, note }) => {
     if (pattern.test(original) && !output.includes(note)) {
@@ -573,23 +695,7 @@ export function mergeResponses(geminiText, groqText) {
   return dedupeCodeBlocksInText(merged);
 }
 
-function appendWikipediaReferences(text, wikiArticles, topicKey) {
-  if (!wikiArticles?.length || !topicKey) return text;
-
-  const refs = wikiArticles
-    .map(
-      (article, i) =>
-        `${i + 1}. **${article.title}**\n\n${article.excerpt}\n\n[Read on Wikipedia](${article.url})`
-    )
-    .join('\n\n');
-
-  if (!refs.trim()) return text;
-
-  const topicLabel = TOPIC_WIKI_SEARCH[topicKey] || topicKey;
-  return `${text.trim()}\n\nFurther reading on **${topicLabel.split(' ')[0]}**:\n\n${refs}`;
-}
-
-function buildSuperResponse(geminiText, groqText, wikiArticles, userMessage, command, editorLanguage) {
+function buildSuperResponse(geminiText, groqText) {
   const sources = [geminiText, groqText].filter(Boolean);
   if (sources.length === 0) {
     throw new Error('No AI responses available. Check your API keys and try again.');
@@ -597,12 +703,6 @@ function buildSuperResponse(geminiText, groqText, wikiArticles, userMessage, com
 
   let merged = mergeResponses(geminiText, groqText);
   merged = postProcessResponse(merged);
-
-  if (isDetailedQuestion(userMessage, command) && wikiArticles.length > 0) {
-    const topicKey = extractMainTopic(userMessage, editorLanguage);
-    merged = appendWikipediaReferences(merged, wikiArticles, topicKey);
-    merged = postProcessResponse(merged);
-  }
 
   return merged || 'No response generated.';
 }
@@ -626,22 +726,20 @@ export async function sendMessage(options) {
   const detailed = isDetailedQuestion(payload.userMessage, payload.command);
   const wikiTopic = extractMainTopic(payload.userMessage, payload.language);
 
-  const [geminiText, groqText, wikiArticles] = await Promise.all([
-    hasGemini ? sendViaGemini(payload).catch(() => null) : Promise.resolve(null),
-    hasGroq ? sendViaGroq(payload).catch(() => null) : Promise.resolve(null),
+  const wikiArticles =
     detailed && wikiTopic
-      ? fetchWikipediaArticles(payload.userMessage, payload.language).catch(() => [])
-      : Promise.resolve([]),
+      ? await fetchWikipediaArticles(payload.userMessage, payload.language).catch(() => [])
+      : [];
+
+  const ragContext = detailed ? buildRagContext(wikiArticles, wikiTopic) : '';
+  const enrichedPayload = { ...payload, ragContext };
+
+  const [geminiText, groqText] = await Promise.all([
+    hasGemini ? sendViaGemini(enrichedPayload).catch(() => null) : Promise.resolve(null),
+    hasGroq ? sendViaGroq(enrichedPayload).catch(() => null) : Promise.resolve(null),
   ]);
 
-  const text = buildSuperResponse(
-    geminiText,
-    groqText,
-    wikiArticles || [],
-    payload.userMessage,
-    payload.command,
-    payload.language
-  );
+  const text = buildSuperResponse(geminiText, groqText);
 
   return { text };
 }
