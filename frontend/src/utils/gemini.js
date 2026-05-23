@@ -7,50 +7,44 @@ const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const MAX_OUTPUT_TOKENS = 8192;
 const TEMPERATURE = 0.9;
 
-const NEXUS_SYSTEM = `You are Nexus AI, the world's most advanced coding assistant. You MUST always give:
-- Extremely detailed and complete answers
-- Minimum 500 words per response
-- Full history and background of the topic
-- Multiple real-world examples (minimum 3)
-- Complete working code examples
-- Best practices and pro tips
-- Common mistakes to avoid
-- Real world use cases
-- Performance tips
-- Future of the technology
-- Comparison with alternatives
-- Step by step explanations
-- Never give short answers
-- Never cut responses short
-- Always complete every section fully`;
+const NEXUS_SYSTEM = `You are Nexus AI, world's smartest coding assistant running in year 2026.
 
-const RESPONSE_SECTIONS = [
-  '## 🚀 Introduction',
-  '## 📚 Full Background & History',
-  '## 💡 Core Concepts (detailed)',
-  '## 💻 Code Examples (minimum 3 examples)',
-  '## 🔥 Advanced Features',
-  '## ⚠️ Common Mistakes',
-  '## ✅ Best Practices',
-  '## 🌍 Real World Use Cases',
-  '## 📊 Comparison with Alternatives',
-  '## 🎯 Tips & Tricks',
-  '## 📝 Summary',
-  '## 🔗 References',
-];
+MOST IMPORTANT RULE:
+- Read the user's question carefully
+- If question is SHORT/SIMPLE → give SHORT focused answer (no fixed headings needed)
+- If question asks for DETAIL → give full detailed answer with headings
+- NEVER use fixed headings for every answer
+- Match response length to question length
 
-const STRUCTURE_PROMPT = `Format your entire answer using these markdown sections when applicable (write each one fully, never leave empty placeholders):
-${RESPONSE_SECTIONS.join('\n')}`;
+For SIMPLE questions like '2+2 in JS':
+→ Just answer directly in 2-3 lines with code
+
+For DETAILED questions like 'explain Python':
+→ Use full structured response with headings
+
+ALWAYS use 2026 modern practices:
+- Never recommend jQuery (outdated)
+- Never recommend var (use let/const)
+- Never recommend old libraries
+- Always recommend modern alternatives
+- Use latest frameworks and tools
+
+STRICT RULES:
+- Never repeat same example twice
+- Never show same code in two sections
+- If used in Code Examples → remove from Advanced Features
+- Each example must be UNIQUE
+- No duplicate content anywhere`;
 
 const COMMAND_INSTRUCTIONS = {
   explain:
-    'Explain the editor code in maximum depth across every required section. Minimum 500 words. Include 3+ code examples.',
+    'Explain the editor code. Match depth to complexity — short answer if simple, structured detail if the code is large or the user needs depth.',
   fix:
-    'Diagnose every bug in depth, show full corrected code, mistakes, best practices, and comparisons. Minimum 500 words.',
+    'Find bugs and show the fix. Be concise for small issues; use sections only when multiple problems need explanation.',
   generate:
-    'Generate complete production-ready code with 3+ examples, use cases, performance tips, and alternatives. Minimum 500 words.',
+    'Generate working code for the request. Keep it short if the ask is small; expand with examples only when needed.',
   refactor:
-    'Deliver a comprehensive refactor guide with before/after code, advanced patterns, and real-world context. Minimum 500 words.',
+    'Refactor the code with clear before/after. Use headings only if the refactor is substantial.',
 };
 
 const STOP_WORDS = new Set([
@@ -62,8 +56,8 @@ const STOP_WORDS = new Set([
   'more', 'most', 'other', 'some', 'such', 'no', 'nor', 'not', 'only', 'own', 'same', 'so',
   'than', 'too', 'very', 'just', 'about', 'up', 'out', 'it', 'its', 'my', 'me', 'i', 'you',
   'your', 'we', 'they', 'them', 'what', 'which', 'who', 'whom', 'please', 'help', 'code',
-  'explain', 'fix', 'generate', 'refactor', 'bug', 'file', 'example', 'examples', 'minimum',
-  'insights', 'untitled', 'active', 'message', 'user', 'task', 'editor',
+  'explain', 'fix', 'generate', 'refactor', 'bug', 'file', 'example', 'examples', 'insights',
+  'untitled', 'active', 'message', 'user', 'task', 'editor',
 ]);
 
 const COMMAND_LABELS = /^explain this code$|^fix this bug$|^generate code$|^refactor code$/i;
@@ -78,19 +72,27 @@ const LANG_WIKI_QUERY = {
   markdown: 'Markdown',
 };
 
-const SECTION_PATTERNS = {
-  '## 🚀 Introduction': [/introduction/, /\bintro\b/, /overview/],
-  '## 📚 Full Background & History': [/background/, /history/],
-  '## 💡 Core Concepts (detailed)': [/core concept/, /\bconcepts\b/, /fundamental/],
-  '## 💻 Code Examples (minimum 3 examples)': [/code example/, /\bsnippets\b/],
-  '## 🔥 Advanced Features': [/advanced/],
-  '## ⚠️ Common Mistakes': [/mistake/, /pitfall/],
-  '## ✅ Best Practices': [/best practice/],
-  '## 🌍 Real World Use Cases': [/real world/, /use case/],
-  '## 📊 Comparison with Alternatives': [/comparison/, /alternative/, /versus/],
-  '## 🎯 Tips & Tricks': [/tip/, /trick/],
-  '## 📝 Summary': [/summary/, /conclusion/],
-};
+const MODERN_REPLACEMENTS = [
+  { pattern: /\bjQuery\b/gi, replacement: 'Vanilla JS or React' },
+  { pattern: /\bvar\s+/g, replacement: 'let/const ' },
+  { pattern: /\bXMLHttpRequest\b/gi, replacement: 'fetch API' },
+  { pattern: /\bcallback hell\b/gi, replacement: 'async/await' },
+];
+
+const OUTDATED_TECH_NOTES = [
+  {
+    pattern: /\bjQuery\b/i,
+    note: '(Note: jQuery is outdated for new projects — use Vanilla JS or React instead)',
+  },
+  {
+    pattern: /\bXMLHttpRequest\b/i,
+    note: '(Note: XMLHttpRequest is outdated — use the fetch API instead)',
+  },
+  {
+    pattern: /\bvar\s+[a-zA-Z_$]/i,
+    note: '(Note: var is outdated — use let/const instead)',
+  },
+];
 
 function getGeminiKey() {
   return process.env.REACT_APP_GEMINI_API_KEY?.trim() || '';
@@ -101,7 +103,7 @@ function getGroqKey() {
 }
 
 function buildUserContent({ userMessage, command, code, filename, language }) {
-  const parts = [STRUCTURE_PROMPT];
+  const parts = [];
 
   if (command && COMMAND_INSTRUCTIONS[command]) {
     parts.push(`Task: ${COMMAND_INSTRUCTIONS[command]}`);
@@ -116,8 +118,19 @@ function buildUserContent({ userMessage, command, code, filename, language }) {
     parts.push('(No code in the editor yet.)');
   }
 
-  parts.push(`User message: ${userMessage}`);
+  parts.push(`User question: ${userMessage}`);
   return parts.join('\n\n');
+}
+
+function isDetailedQuestion(userMessage, command) {
+  if (command) return true;
+
+  const msg = (userMessage || '').trim();
+  if (msg.length > 100) return true;
+
+  return /explain|describe|detail|comprehensive|full guide|tutorial|how does|walk me through|compare|history|best practices|step by step/i.test(
+    msg
+  );
 }
 
 function buildWikipediaQueries(userMessage, language) {
@@ -142,13 +155,10 @@ function buildWikipediaQueries(userMessage, language) {
 
   if (words.length > 0) {
     queries.push(words.slice(0, 6).join(' '));
-    if (words.length >= 2) {
-      queries.push(words.slice(0, 3).join(' '));
-    }
   }
 
-  if (queries.length === 0) {
-    queries.push(language && LANG_WIKI_QUERY[language] ? LANG_WIKI_QUERY[language] : 'Computer programming');
+  if (queries.length === 0 && language && LANG_WIKI_QUERY[language]) {
+    queries.push(LANG_WIKI_QUERY[language]);
   }
 
   return [...new Set(queries)].slice(0, 3);
@@ -283,7 +293,7 @@ async function sendViaGroq(payload) {
       messages: [
         {
           role: 'system',
-          content: `${NEXUS_SYSTEM}\n\n${STRUCTURE_PROMPT}${commandHint ? `\n\nTask: ${commandHint}` : ''}`,
+          content: `${NEXUS_SYSTEM}${commandHint ? `\n\nTask focus: ${commandHint}` : ''}`,
         },
         { role: 'user', content: buildUserContent(payload) },
       ],
@@ -317,8 +327,8 @@ function wordOverlapRatio(a, b) {
   return shared / Math.min(wordsA.size, wordsB.size);
 }
 
-function isExactDuplicateBlock(a, b) {
-  return normalizeBlock(a) === normalizeBlock(b);
+function codeFingerprint(code) {
+  return normalizeBlock(code).slice(0, 50);
 }
 
 function isDuplicateSection(a, b) {
@@ -330,208 +340,126 @@ function isDuplicateSection(a, b) {
   return wordOverlapRatio(a, b) > 0.82;
 }
 
-function stripCodeFromText(text) {
-  return (text || '').replace(/```[\s\S]*?```/g, '').trim();
-}
-
-function extractCodeBlocks(text) {
-  const blocks = [];
-  const regex = /```([\w]*)\n?([\s\S]*?)```/g;
-  let match;
-  while ((match = regex.exec(text || '')) !== null) {
-    const lang = match[1] || 'code';
-    const code = match[2].replace(/^\n|\n$/g, '').trim();
-    if (code) {
-      blocks.push({ lang, code, raw: `\`\`\`${lang}\n${code}\n\`\`\`` });
-    }
-  }
-  return blocks;
-}
-
-function extractAllCodeBlocks(sources) {
-  const all = [];
-  sources.forEach((text) => {
-    extractCodeBlocks(text).forEach((block) => {
-      if (!all.some((existing) => isExactDuplicateBlock(existing.code, block.code))) {
-        all.push(block);
-      }
-    });
-  });
-  return all;
-}
-
-function formatCodeBlocksForOutput(blocks) {
-  if (blocks.length === 0) return '';
-
-  return blocks
-    .map((block, i) => {
-      const lang = block.lang || 'code';
-      return `### Example ${i + 1}\n\n\`\`\`${lang}\n${block.code}\n\`\`\``;
-    })
-    .join('\n\n');
-}
-
-function parseSectionsFromMarkdown(text) {
-  const map = new Map();
-  if (!text?.trim()) return map;
-
-  const parts = text.split(/(?=^##\s+)/m);
-  parts.forEach((part) => {
-    const trimmed = part.trim();
-    if (!trimmed) return;
-    const match = trimmed.match(/^##\s+(.+?)(?:\n+([\s\S]*))?$/);
-    if (!match) return;
-
-    const heading = `## ${match[1].trim()}`;
-    const body = stripCodeFromText(match[2] || '').trim();
-    if (!body || body.length < 30) return;
-
-    const existing = map.get(heading) || [];
-    if (!existing.some((e) => isDuplicateSection(e, body))) {
-      existing.push(body);
-    }
-    map.set(heading, existing);
-  });
-
-  return map;
-}
-
-function matchCanonicalSection(heading) {
-  const h = heading.toLowerCase();
-  for (const [canonical, patterns] of Object.entries(SECTION_PATTERNS)) {
-    if (patterns.some((re) => re.test(h))) return canonical;
-  }
-  return null;
+function splitParagraphs(text) {
+  return (text || '')
+    .split(/\n{2,}/)
+    .map((p) => p.trim())
+    .filter((p) => p.length > 0);
 }
 
 /**
- * Merge Gemini + Groq: if nearly identical, keep one; else merge unique sections only once.
+ * Remove duplicate fenced code blocks — keep first occurrence only (by first 50 chars).
+ */
+export function dedupeCodeBlocksInText(text) {
+  if (!text?.trim()) return '';
+
+  const seenFingerprints = new Set();
+
+  const cleaned = text.replace(/```([\w]*)\n?([\s\S]*?)```/g, (full, lang, code) => {
+    const cleanCode = code.replace(/^\n|\n$/g, '').trim();
+    if (!cleanCode) return '';
+
+    const fp = codeFingerprint(cleanCode);
+    if (seenFingerprints.has(fp)) {
+      return '';
+    }
+
+    seenFingerprints.add(fp);
+    const language = lang || 'code';
+    return `\`\`\`${language}\n${cleanCode}\n\`\`\``;
+  });
+
+  return cleaned
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/^\s*\n/gm, '\n')
+    .trim();
+}
+
+/**
+ * Modernize outdated recommendations for 2026.
+ */
+export function postProcessResponse(text) {
+  if (!text?.trim()) return '';
+
+  let output = text;
+  const original = text;
+
+  OUTDATED_TECH_NOTES.forEach(({ pattern, note }) => {
+    if (pattern.test(original) && !output.includes(note)) {
+      output = output.replace(pattern, (match) => `${match} ${note}`);
+    }
+  });
+
+  MODERN_REPLACEMENTS.forEach(({ pattern, replacement }) => {
+    output = output.replace(pattern, replacement);
+  });
+
+  return output.replace(/\n{3,}/g, '\n\n').trim();
+}
+
+/**
+ * Merge Gemini + Groq with duplicate prose/code removal.
  */
 export function mergeResponses(geminiText, groqText) {
   const g = geminiText?.trim() || '';
   const q = groqText?.trim() || '';
 
-  if (!g) return q;
-  if (!q) return g;
+  if (!g) return dedupeCodeBlocksInText(q);
+  if (!q) return dedupeCodeBlocksInText(g);
 
-  const proseG = normalizeBlock(stripCodeFromText(g));
-  const proseQ = normalizeBlock(stripCodeFromText(q));
+  const proseG = normalizeBlock(g.replace(/```[\s\S]*?```/g, ''));
+  const proseQ = normalizeBlock(q.replace(/```[\s\S]*?```/g, ''));
 
-  if (proseG === proseQ || (proseG.length > 150 && proseQ.length > 150 && wordOverlapRatio(g, q) > 0.78)) {
-    return g.length >= q.length ? g : q;
+  if (proseG === proseQ || (proseG.length > 120 && proseQ.length > 120 && wordOverlapRatio(g, q) > 0.78)) {
+    return dedupeCodeBlocksInText(g.length >= q.length ? g : q);
   }
 
-  const mergedByCanonical = new Map();
+  const primary = g.length >= q.length ? g : q;
+  const secondary = primary === g ? q : g;
 
-  [g, q].forEach((source) => {
-    parseSectionsFromMarkdown(source).forEach((bodies, heading) => {
-      const canonical = matchCanonicalSection(heading) || heading;
-      const existing = mergedByCanonical.get(canonical) || [];
+  const primaryParas = splitParagraphs(primary.replace(/```[\s\S]*?```/g, '[code]'));
+  const extraParas = splitParagraphs(secondary.replace(/```[\s\S]*?```/g, '[code]')).filter(
+    (p) => !primaryParas.some((existing) => isDuplicateSection(existing, p))
+  );
 
-      bodies.forEach((body) => {
-        if (!existing.some((e) => isDuplicateSection(e, body))) {
-          existing.push(body);
-        }
-      });
-
-      mergedByCanonical.set(canonical, existing);
-    });
-  });
-
-  if (mergedByCanonical.size === 0) {
-    return g.length >= q.length ? g : q;
+  let merged = primary;
+  if (extraParas.length > 0) {
+    merged = `${primary.trim()}\n\n${extraParas.join('\n\n')}`;
   }
 
-  const parts = [];
-  RESPONSE_SECTIONS.forEach((canonical) => {
-    if (canonical === '## 🔗 References') return;
-    const bodies = mergedByCanonical.get(canonical);
-    if (!bodies?.length) return;
-    parts.push(canonical, '', bodies.join('\n\n'), '');
-  });
-
-  const used = new Set(RESPONSE_SECTIONS);
-  mergedByCanonical.forEach((bodies, key) => {
-    if (used.has(key) || !bodies.length) return;
-    parts.push(key, '', bodies.join('\n\n'), '');
-  });
-
-  return parts.join('\n').trim() || (g.length >= q.length ? g : q);
+  return dedupeCodeBlocksInText(merged);
 }
 
-function hasRealContent(body) {
-  const t = (body || '').trim();
-  if (!t || t.length < 50) return false;
-  if (/^_See combined/i.test(t)) return false;
-  if (/^See combined analysis/i.test(t)) return false;
-  return true;
+function appendWikipediaReferences(text, wikiArticles) {
+  if (!wikiArticles?.length) return text;
+
+  const refs = wikiArticles
+    .map(
+      (article, i) =>
+        `${i + 1}. **${article.title}**\n\n${article.excerpt}\n\n[Read on Wikipedia](${article.url})`
+    )
+    .join('\n\n');
+
+  if (!refs.trim()) return text;
+
+  return `${text.trim()}\n\n## References\n\n${refs}`;
 }
 
-function findBodyForSection(sectionMap, canonical, codeBlocksFormatted) {
-  if (canonical === '## 💻 Code Examples (minimum 3 examples)') {
-    return codeBlocksFormatted;
-  }
-
-  const patterns = SECTION_PATTERNS[canonical];
-  if (!patterns) return '';
-
-  let content = '';
-  sectionMap.forEach((bodies, heading) => {
-    const h = heading.toLowerCase();
-    if (patterns.some((re) => re.test(h))) {
-      content = [content, ...bodies].filter(Boolean).join('\n\n');
-    }
-  });
-
-  if (content) return content;
-
-  const direct = sectionMap.get(canonical);
-  if (direct?.length) return direct.join('\n\n');
-
-  return '';
-}
-
-function buildSuperResponse(geminiText, groqText, wikiArticles) {
+function buildSuperResponse(geminiText, groqText, wikiArticles, userMessage, command) {
   const sources = [geminiText, groqText].filter(Boolean);
   if (sources.length === 0) {
     throw new Error('No AI responses available. Check your API keys and try again.');
   }
 
-  const mergedNarrative = mergeResponses(geminiText, groqText);
-  const allCodeBlocks = extractAllCodeBlocks(sources);
-  const codeBlocksFormatted = formatCodeBlocksForOutput(allCodeBlocks);
-  const sectionMap = parseSectionsFromMarkdown(mergedNarrative);
+  let merged = mergeResponses(geminiText, groqText);
+  merged = postProcessResponse(merged);
 
-  const output = [];
-
-  RESPONSE_SECTIONS.forEach((heading) => {
-    if (heading === '## 🔗 References') return;
-
-    let body = findBodyForSection(sectionMap, heading, codeBlocksFormatted);
-    if (!hasRealContent(body)) return;
-
-    output.push(heading, '', body.trim(), '');
-  });
-
-  if (wikiArticles.length > 0) {
-    const refBody = wikiArticles
-      .map(
-        (article, i) =>
-          `${i + 1}. **${article.title}**\n\n${article.excerpt}\n\n[Read on Wikipedia](${article.url})`
-      )
-      .join('\n\n');
-
-    if (hasRealContent(refBody)) {
-      output.push('## 🔗 References', '', refBody, '');
-    }
+  if (isDetailedQuestion(userMessage, command)) {
+    merged = appendWikipediaReferences(merged, wikiArticles);
+    merged = postProcessResponse(merged);
   }
 
-  if (output.length === 0) {
-    const fallback = [mergedNarrative, codeBlocksFormatted].filter(Boolean).join('\n\n');
-    return fallback || 'No response generated.';
-  }
-
-  return output.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  return merged || 'No response generated.';
 }
 
 export async function sendMessage(options) {
@@ -550,13 +478,24 @@ export async function sendMessage(options) {
     throw new Error('Add REACT_APP_GEMINI_API_KEY and/or REACT_APP_GROQ_API_KEY to your .env file.');
   }
 
+  const detailed = isDetailedQuestion(payload.userMessage, payload.command);
+
   const [geminiText, groqText, wikiArticles] = await Promise.all([
     hasGemini ? sendViaGemini(payload).catch(() => null) : Promise.resolve(null),
     hasGroq ? sendViaGroq(payload).catch(() => null) : Promise.resolve(null),
-    fetchWikipediaArticles(payload.userMessage, payload.language).catch(() => []),
+    detailed
+      ? fetchWikipediaArticles(payload.userMessage, payload.language).catch(() => [])
+      : Promise.resolve([]),
   ]);
 
-  const text = buildSuperResponse(geminiText, groqText, wikiArticles || []);
+  const text = buildSuperResponse(
+    geminiText,
+    groqText,
+    wikiArticles || [],
+    payload.userMessage,
+    payload.command
+  );
+
   return { text };
 }
 
@@ -565,6 +504,5 @@ export {
   GROQ_MODEL,
   COMMAND_INSTRUCTIONS,
   NEXUS_SYSTEM,
-  RESPONSE_SECTIONS,
   MAX_OUTPUT_TOKENS,
 };
