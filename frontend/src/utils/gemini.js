@@ -1,5 +1,7 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
+const TAVILY_SEARCH_URL = 'https://api.tavily.com/search';
+
 const GEMINI_MODEL = 'gemini-2.0-flash';
 const GROQ_MODEL = 'llama-3.3-70b-versatile';
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
@@ -7,55 +9,72 @@ const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const MAX_OUTPUT_TOKENS = 8192;
 const TEMPERATURE = 0.9;
 
-const NEXUS_SYSTEM = `You are Nexus AI — elite-level engineering intelligence (2026). Absolute technical precision, authority, zero filler.
+const NEXUS_SYSTEM = `You are Nexus Ultra Engine (Nexus AI v2.0) — Principal-level engineering intelligence. Zero filler. Absolute precision.
 
-## PART 1 — ADAPTIVE RESPONSE INTELLIGENCE
-SHORT-FORM (under 8 words, no instructional words like explain/how/why/detail):
-- Max 3 lines of natural prose total.
-- Exactly 1 inline line OR one compact fenced code block — not both unless essential.
-- Zero headings, tables, or introductory filler.
+## LAYOUT & MARKDOWN (CRITICAL)
+- Never place prose and fenced code on the same line.
+- Always insert a blank line (two newlines) before opening \`\`\` and after closing \`\`\`.
+- Inline: wrap every variable, operator expression, keyword, and native identifier in backticks inside prose (e.g. \`2 + 2\`, \`useState\`, \`async\`).
+- Multi-line code: language-tagged fences only. Never append a fence directly after a sentence.
 
-LONG-FORM (detailed / instructional queries):
-- Full structured answer with natural, context-driven headings (never a rigid wiki template).
-- Inline code: backticks. Multi-line: language-tagged fences (e.g. \`\`\`javascript).
+## SHORT-FORM (strict brevity)
+- Max 3 lines of prose OR one compact fenced block — not a crowded cluster.
+- Direct answer: one key insight or one minimal snippet. No headings.
 
-## PART 2 — PRODUCTION-GRADE CODE
-- Python decorators: always \`from functools import wraps\` and \`@wraps(func)\`; wrappers use \`*args, **kwargs\`.
-- Auth: never dummy \`return True\`; use realistic structural validation patterns.
-- Modern stack only: no var, XMLHttpRequest, or jQuery unless the user explicitly requests legacy code.
-- Language best practices: JS async/await + modules; Python type hints + PEP8; prioritize readability and maintainability.
+## LONG-FORM (8-step teaching sequence — use all steps for concept/architecture questions)
+1. High-impact analogy (one line)
+2. Complete production-grade definition
+3. Structural contrast: Before vs After or Problem vs Solution (markdown table or clear blocks)
+4. Foundation code (minimal, runnable, output comments required)
+5. Under-the-hood mechanisms (execution/memory)
+6. Enterprise real-world example (complete, no placeholders)
+7. Edge cases and pro-tips
+8. Crisp summary (max 3 lines) — hard stop
 
-## PART 3 — LAYERED TEACHING (long-form concept explanations only)
-When teaching a complex topic, flow naturally through:
-1. One-line high-impact analogy
-2. Conceptual core (no boilerplate)
-3. Contrast layer if needed (Before/After or Problem/Solution)
-4. Foundation code (minimal, production-grade)
-5. Internal mechanisms (how it runs under the hood)
-6. Enterprise-grade real-world example
-7. Pro-tips and edge cases
-8. Crisp wrap-up (max 3 lines) — then stop
+## TOPIC COMPLETENESS (when the question matches)
+- React Hooks: \`useState\`, \`useEffect\`, custom hooks with real state mutations; contrast vs \`componentDidMount\` / class lifecycle.
+- Async/Await: \`async\` returns a \`Promise\`; \`await\` pauses non-blockingly; \`try/catch\`; \`Promise.all()\` for parallelism; contrast vs \`.then()\` chains.
+- Python list comprehensions: trailing \`# Output: [...]\` on every snippet; equivalent \`for\` loop; filters/transforms/nested on a realistic dataset.
+- Python decorators: \`from functools import wraps\`, \`@wraps(func)\`, \`*args, **kwargs\`; map the wrapper transformation.
 
-Skip or compress steps when the question is narrow. Never pad with generic encyclopedic text.
+## CODE QUALITY
+- Every block complete and runnable — no \`// code goes here\` or \`...\` placeholders.
+- Declare exact runtime output in comments (\`// Output:\`, \`# Output:\`).
+- Modern syntax only: no \`var\`, jQuery, or XMLHttpRequest unless explicitly requested.
+- Python decorators: mandatory \`@wraps\`. Auth: no dummy \`return True\`.
 
-## PART 4 — REFERENCE SYNTHESIS
-If background references are provided, synthesize them into your voice. Priority: official docs (*.org, *.dev) > engineering sources > learning sites > Wikipedia.
-Never output raw search dumps, link lists, or "Further reading" sections.
+## ERROR CORRECTION
+If the user question embeds a false assumption or anti-pattern, correct it in one brief line before the main answer.
 
-## PART 5 — EDITOR CODE
-- No editor code in context → answer directly; do not invent or paste their open file.
-- Editor code provided → analyze/fix/explain only what they asked.
+## WEB RESEARCH
+Synthesize provided snippets naturally. Priority: MDN → Stack Overflow → GitHub → dev.to. No "Source:", no link dumps.
 
-## PART 6–12 — EXECUTION DISCIPLINE (internal; never print this checklist)
-- Detect intent: fact / coding / learning / debugging / decision-making — adapt depth and tone.
-- Correct user errors briefly before answering when relevant.
-- Maximize signal-to-noise; every sentence must add value.
-- Infer skill level; do not over-explain to advanced users.
-- Include trade-offs and justify the optimal choice when comparing options.
-- Principal-engineer quality only; purge redundancy and "you can confirm" filler.`;
+## EDITOR CODE
+Only analyze open-file code when editor context was supplied.`;
 
-const INSTRUCTIONAL_WORDS =
-  /\b(explain|how|why|detail|describe|tutorial|walk|compare|guide|steps|works|difference|learn|teach|comprehensive|deep dive|step by step)\b/i;
+const LONG_INSTRUCTIONAL =
+  /\b(what is|how to|explain|why|examples|show me|difference|compare|when to use|how does|walk me through|best practices|step by step|tutorial|describe|detail)\b/i;
+
+const ARCHITECTURAL_TOPICS =
+  /\b(react|hooks?|useState|useEffect|async|await|decorators?|classes?|functions?|web\s*apis?|promise|componentDidMount|componentWillMount|lifecycle|jsx|typescript|generics?)\b/i;
+
+const PURE_MATH_PATTERN = /^[\d\s+\-*/().=^%]+$/;
+
+const SINGLE_PRIMITIVE_PATTERN =
+  /^(var|let|const|function|async|await|null|undefined|true|false|this|super|import|export)$/i;
+
+const BINARY_VALIDATION_PATTERN = /^is\s+.+\?\s*$/i;
+
+const TOPIC_COMPLETENESS_RULES = {
+  react_hooks:
+    'React Hooks coverage required: useState, useEffect, custom hooks with real state updates; contrast hooks vs class lifecycle (componentDidMount, etc.).',
+  async_await:
+    'Async/Await coverage required: async returns Promise; await non-blocking pause; try/catch; Promise.all() for parallel work; contrast vs .then() chains.',
+  python_comprehensions:
+    'List comprehension coverage required: # Output: [...] on each snippet; equivalent for-loop; filters, transforms, nested logic on realistic data.',
+  python_decorators:
+    'Decorator coverage required: from functools import wraps, @wraps(func), *args/**kwargs; explain wrapper transformation.',
+};
 
 /** Official doc tier-1 pointers (synthesis hints, not link dumps in output). */
 const OFFICIAL_DOC_HINTS = {
@@ -107,8 +126,21 @@ const STOP_WORDS = new Set([
 
 const COMMAND_LABELS = /^explain this code$|^fix this bug$|^generate code$|^refactor code$/i;
 
-/** Exact Wikipedia search phrases for known topics (message topic wins over editor language). */
-const TOPIC_WIKI_SEARCH = {
+const TAVILY_SEARCH_DOMAINS = [
+  'developer.mozilla.org',
+  'stackoverflow.com',
+  'github.com',
+  'dev.to',
+  'python.org',
+  'react.dev',
+  'nodejs.org',
+  'freecodecamp.org',
+  'geeksforgeeks.org',
+  'en.wikipedia.org',
+];
+
+/** Search query phrases for known topics (message topic wins over editor language). */
+const TOPIC_SEARCH_QUERIES = {
   python: 'Python programming language',
   javascript: 'JavaScript programming language',
   typescript: 'TypeScript programming language',
@@ -166,17 +198,6 @@ const TOPIC_DETECT_ORDER = [
   'go',
 ];
 
-const TOPIC_CONFLICTS = {
-  python: ['javascript', 'typescript', 'react', 'vue', 'angular', 'java', 'node.js', 'nodejs'],
-  javascript: ['python', 'java', 'rust', 'ruby', 'php'],
-  typescript: ['python', 'java', 'ruby', 'php'],
-  react: ['python', 'vue', 'angular', 'django', 'flask'],
-  java: ['javascript', 'python', 'typescript', 'react'],
-  rust: ['python', 'javascript', 'java'],
-  go: ['python', 'javascript', 'java'],
-  golang: ['python', 'javascript', 'java'],
-};
-
 const MODERN_REPLACEMENTS = [
   { pattern: /\bjQuery\b/gi, replacement: 'Vanilla JS or React' },
   { pattern: /\bvar\s+/g, replacement: 'let/const ' },
@@ -207,6 +228,10 @@ function getGroqKey() {
   return process.env.REACT_APP_GROQ_API_KEY?.trim() || '';
 }
 
+function getTavilyKey() {
+  return process.env.REACT_APP_TAVILY_API_KEY?.trim() || '';
+}
+
 function isAboutUserCode(userMessage, command) {
   if (command) return true;
 
@@ -218,22 +243,84 @@ function isAboutUserCode(userMessage, command) {
   );
 }
 
+export function isLongFormQuery(userMessage, command) {
+  if (command) return true;
+  if (isAboutUserCode(userMessage, command)) return true;
+
+  const msg = (userMessage || '').trim();
+  if (!msg) return false;
+
+  const wordCount = msg.split(/\s+/).filter(Boolean).length;
+  const lower = msg.toLowerCase();
+
+  if (wordCount > 5) return true;
+  if (LONG_INSTRUCTIONAL.test(lower)) return true;
+  if (ARCHITECTURAL_TOPICS.test(lower)) return true;
+
+  return false;
+}
+
 export function isShortFormQuery(userMessage, command) {
-  if (command) return false;
-  if (isAboutUserCode(userMessage, command)) return false;
+  if (isLongFormQuery(userMessage, command)) return false;
 
   const msg = (userMessage || '').trim();
   if (!msg) return true;
 
-  const wordCount = msg.split(/\s+/).filter(Boolean).length;
-  if (wordCount >= 8) return false;
-  if (INSTRUCTIONAL_WORDS.test(msg)) return false;
+  const compact = msg.replace(/\s/g, '');
+  if (PURE_MATH_PATTERN.test(compact)) return true;
+  if (SINGLE_PRIMITIVE_PATTERN.test(msg)) return true;
+  if (BINARY_VALIDATION_PATTERN.test(msg)) return true;
 
-  return true;
+  const wordCount = msg.split(/\s+/).filter(Boolean).length;
+  return wordCount <= 5;
 }
 
-function isSimpleQuestion(userMessage, command) {
-  return isShortFormQuery(userMessage, command);
+function detectTopicCompletenessHints(userMessage) {
+  const lower = (userMessage || '').toLowerCase();
+  const hints = [];
+
+  if (/\b(hooks?|useState|useEffect|componentDidMount)\b/.test(lower) || /\breact\b.*\bhook/.test(lower)) {
+    hints.push(TOPIC_COMPLETENESS_RULES.react_hooks);
+  }
+  if (/\basync\b/.test(lower) || /\bawait\b/.test(lower) || /\bpromise\.all\b/i.test(lower)) {
+    hints.push(TOPIC_COMPLETENESS_RULES.async_await);
+  }
+  if (
+    /\blist comprehension\b/.test(lower) ||
+    (/\bcomprehension\b/.test(lower) && /\bpython\b/.test(lower))
+  ) {
+    hints.push(TOPIC_COMPLETENESS_RULES.python_comprehensions);
+  }
+  if (/\bdecorator/.test(lower) && /\bpython\b/.test(lower)) {
+    hints.push(TOPIC_COMPLETENESS_RULES.python_decorators);
+  }
+
+  return hints;
+}
+
+function detectQueryErrors(userMessage) {
+  const msg = (userMessage || '').trim();
+  if (!msg) return [];
+
+  const corrections = [];
+
+  if (/\bvar\b.*\b(?:best|recommended|modern|only)\b/i.test(msg) || /\bonly\s+var\b/i.test(msg)) {
+    corrections.push('Correction: `var` is legacy — use `let` or `const` in modern JavaScript.');
+  }
+  if (/\bjquery\b.*\b(?:modern|recommended|best)\b/i.test(msg)) {
+    corrections.push('Correction: jQuery is not recommended for new projects — use native DOM or React.');
+  }
+  if (/\bXMLHttpRequest\b.*\b(?:prefer|better|modern)\b/i.test(msg)) {
+    corrections.push('Correction: prefer the `fetch` API over `XMLHttpRequest`.');
+  }
+  if (/\bpython\s+2\b/i.test(msg) && !/\bpython\s+3\b/i.test(msg)) {
+    corrections.push('Correction: Python 2 is end-of-life — use Python 3.');
+  }
+  if (/\bawait\b/.test(msg) && /\bnon-?blocking\s+thread\b/i.test(msg)) {
+    corrections.push('Correction: `await` pauses the async function, not the entire thread — the event loop stays non-blocking.');
+  }
+
+  return corrections;
 }
 
 export function detectIntent(userMessage, command) {
@@ -258,18 +345,67 @@ function shouldIncludeEditorCode(userMessage, command) {
   return isAboutUserCode(userMessage, command);
 }
 
-function buildRagContext(wikiArticles, topicKey) {
+function buildWebSearchQuery(userMessage, editorLanguage) {
+  const cleaned = cleanUserMessageForTopic(userMessage) || (userMessage || '').trim();
+  if (cleaned.length >= 8) return cleaned;
+
+  const topicKey = extractMainTopic(userMessage, editorLanguage);
+  if (topicKey && TOPIC_SEARCH_QUERIES[topicKey]) {
+    return TOPIC_SEARCH_QUERIES[topicKey];
+  }
+
+  return cleaned;
+}
+
+/**
+ * Tavily web search (REST API — same options as @tavily/core; CRA cannot bundle the SDK's Node deps).
+ * Snippets are for RAG synthesis only; never appended as raw results to the user.
+ */
+export async function searchWeb(userMessage, editorLanguage) {
+  const apiKey = getTavilyKey();
+  if (!apiKey) return [];
+
+  const query = buildWebSearchQuery(userMessage, editorLanguage)?.trim();
+  if (!query) return [];
+
+  try {
+    const res = await fetch(TAVILY_SEARCH_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        api_key: apiKey,
+        query,
+        max_results: 5,
+        search_depth: 'advanced',
+        include_domains: TAVILY_SEARCH_DOMAINS,
+      }),
+    });
+
+    if (!res.ok) return [];
+
+    const data = await res.json();
+    return (data?.results || [])
+      .filter((r) => r?.content?.trim())
+      .map((r) => ({
+        title: r.title || 'Untitled',
+        snippet: (r.content || '').replace(/\s+/g, ' ').trim().slice(0, 400),
+      }));
+  } catch {
+    return [];
+  }
+}
+
+function buildRagContext(webResults, topicKey) {
   const lines = [];
 
   const official = topicKey && OFFICIAL_DOC_HINTS[topicKey];
   if (official) {
-    lines.push(`Official documentation (tier 1): ${official}`);
+    lines.push(`Official documentation: ${official}`);
   }
 
-  if (wikiArticles?.length) {
-    wikiArticles.forEach((article) => {
-      const excerpt = (article.excerpt || '').slice(0, 280);
-      lines.push(`Reference excerpt — ${article.title}: ${excerpt}`);
+  if (webResults?.length) {
+    webResults.forEach((hit) => {
+      lines.push(`${hit.title}: ${hit.snippet}`);
     });
   }
 
@@ -283,15 +419,25 @@ function buildUserContent({ userMessage, command, code, filename, language, ragC
   const longForm = isDetailedQuestion(userMessage, command);
   const intent = detectIntent(userMessage, command);
 
+  const queryErrors = detectQueryErrors(userMessage);
+  if (queryErrors.length) {
+    parts.push(`User query corrections (state briefly at the start of your answer):\n${queryErrors.join('\n')}`);
+  }
+
   if (shortForm) {
     parts.push(
-      'RESPONSE MODE: SHORT-FORM. Maximum 3 lines of prose. One code line or one compact fenced block. No headings, tables, or filler.'
+      'RESPONSE MODE: SHORT-FORM. Max 3 prose lines OR one compact fenced block. No headings. Blank line before/after any fence. Backtick all inline code tokens.'
     );
   } else if (longForm) {
     parts.push(
-      'RESPONSE MODE: LONG-FORM. Use natural headings. For concept teaching, follow: analogy → core → contrast (if needed) → foundation code → mechanisms → enterprise example → pro-tips → wrap-up (≤3 lines).'
+      'RESPONSE MODE: LONG-FORM. Execute full 8-step sequence. Blank line before/after every fenced block. Every code block must include output comments and be runnable.'
     );
     parts.push(`Intent: ${intent}. Scale depth to inferred skill; include trade-offs when comparing options.`);
+
+    const topicHints = detectTopicCompletenessHints(userMessage);
+    if (topicHints.length) {
+      parts.push(`Topic completeness (mandatory):\n${topicHints.join('\n')}`);
+    }
   } else {
     parts.push(`Intent: ${intent}. Match depth to the question — concise unless they asked for depth.`);
   }
@@ -317,7 +463,7 @@ function buildUserContent({ userMessage, command, code, filename, language, ragC
 
   if (ragContext?.trim() && longForm) {
     parts.push(
-      `Background references (synthesize naturally; do not list links or append "Further reading"):\n${ragContext}`
+      `Web research (integrate naturally into your answer; no "Source:", "Reference:", or link dumps):\n${ragContext}`
     );
   }
 
@@ -326,15 +472,7 @@ function buildUserContent({ userMessage, command, code, filename, language, ragC
 }
 
 function isDetailedQuestion(userMessage, command) {
-  if (command) return true;
-  if (isSimpleQuestion(userMessage, command)) return false;
-
-  const msg = (userMessage || '').trim();
-  if (msg.length > 100) return true;
-
-  return /explain|describe|detail|comprehensive|full guide|tutorial|how does|walk me through|compare|history|best practices|step by step/i.test(
-    msg
-  );
+  return isLongFormQuery(userMessage, command);
 }
 
 function cleanUserMessageForTopic(userMessage) {
@@ -366,143 +504,15 @@ export function extractMainTopic(userMessage, editorLanguage) {
       .filter((w) => w.length > 2 && !STOP_WORDS.has(w));
 
     for (const word of words) {
-      if (TOPIC_WIKI_SEARCH[word]) return word;
+      if (TOPIC_SEARCH_QUERIES[word]) return word;
     }
   }
 
-  if (editorLanguage && TOPIC_WIKI_SEARCH[editorLanguage]) {
+  if (editorLanguage && TOPIC_SEARCH_QUERIES[editorLanguage]) {
     return editorLanguage;
   }
 
   return null;
-}
-
-function getWikipediaSearchQuery(topicKey) {
-  if (!topicKey) return null;
-  if (TOPIC_WIKI_SEARCH[topicKey]) return TOPIC_WIKI_SEARCH[topicKey];
-
-  const label = topicKey.charAt(0).toUpperCase() + topicKey.slice(1);
-  return `${label} programming language`;
-}
-
-function getTopicMatchTerms(topicKey) {
-  const terms = [topicKey.toLowerCase()];
-  if (topicKey === 'javascript') terms.push('ecmascript', 'js');
-  if (topicKey === 'typescript') terms.push('typescript', 'ts');
-  if (topicKey === 'python') terms.push('python');
-  if (topicKey === 'react') terms.push('react');
-  if (topicKey === 'nodejs' || topicKey === 'node') terms.push('node.js', 'nodejs');
-  if (topicKey === 'golang' || topicKey === 'go') terms.push('go programming');
-  return [...new Set(terms)];
-}
-
-function isArticleRelevantToTopic(article, topicKey) {
-  if (!article?.title || !topicKey) return false;
-
-  const title = article.title.toLowerCase();
-  const excerpt = (article.excerpt || '').toLowerCase();
-  const blob = `${title} ${excerpt}`;
-
-  if (/^example$/i.test(title) || /^sample/i.test(title) || /^list of/i.test(title)) {
-    return false;
-  }
-
-  const matchTerms = getTopicMatchTerms(topicKey);
-  const matchesTopic = matchTerms.some((term) => {
-    if (term.length <= 2) return false;
-    if (term === 'go' || term === 'js') {
-      return new RegExp(`\\b${term}\\b`, 'i').test(blob);
-    }
-    return blob.includes(term);
-  });
-
-  if (!matchesTopic) return false;
-
-  const conflicts = TOPIC_CONFLICTS[topicKey] || [];
-  for (const conflict of conflicts) {
-    const conflictInTitle = title.includes(conflict);
-    const topicInTitle = matchTerms.some((t) => t.length > 3 && title.includes(t));
-    if (conflictInTitle && !topicInTitle) return false;
-  }
-
-  if (topicKey === 'python' && title.includes('javascript') && !title.includes('python')) {
-    return false;
-  }
-  if (topicKey === 'javascript' && title === 'python' && !blob.includes('javascript')) {
-    return false;
-  }
-  if (topicKey === 'react' && title.includes('python') && !title.includes('react')) {
-    return false;
-  }
-
-  return true;
-}
-
-function buildWikipediaQueries(userMessage, editorLanguage) {
-  const topicKey = extractMainTopic(userMessage, editorLanguage);
-  const query = getWikipediaSearchQuery(topicKey);
-  return query ? [{ query, topicKey }] : [];
-}
-
-async function fetchArticleSummary(title) {
-  try {
-    const summaryUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`;
-    const res = await fetch(summaryUrl);
-    if (!res.ok) return null;
-
-    const data = await res.json();
-    const excerpt = data.extract?.replace(/\s+/g, ' ').trim();
-    if (!excerpt) return null;
-
-    return {
-      title: data.title || title,
-      excerpt,
-      url: data.content_urls?.desktop?.page || `https://en.wikipedia.org/wiki/${encodeURIComponent(title)}`,
-    };
-  } catch {
-    return null;
-  }
-}
-
-async function searchWikipediaTitles(query, limit = 3) {
-  const searchUrl =
-    `https://en.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(query)}` +
-    `&limit=${limit}&namespace=0&format=json&origin=*`;
-
-  const res = await fetch(searchUrl);
-  if (!res.ok) return [];
-
-  const [, titles] = await res.json();
-  return (titles || []).slice(0, limit);
-}
-
-export async function fetchWikipediaArticles(userMessage, editorLanguage) {
-  try {
-    const queryPlans = buildWikipediaQueries(userMessage, editorLanguage);
-    if (queryPlans.length === 0) return [];
-
-    const { query, topicKey } = queryPlans[0];
-    const titles = await searchWikipediaTitles(query, 5);
-
-    const seenTitles = new Set();
-    const articles = [];
-
-    for (const title of titles) {
-      const key = title?.toLowerCase();
-      if (!title || seenTitles.has(key)) continue;
-      seenTitles.add(key);
-
-      const article = await fetchArticleSummary(title);
-      if (article && isArticleRelevantToTopic(article, topicKey)) {
-        articles.push(article);
-      }
-      if (articles.length >= 2) break;
-    }
-
-    return articles;
-  } catch {
-    return [];
-  }
 }
 
 async function sendViaGemini(payload) {
@@ -633,19 +643,94 @@ const FILLER_PATTERNS = [
   /\n+#{1,3}\s*Further reading[\s\S]*$/i,
   /\n+Further reading on[\s\S]*$/i,
   /\n+##\s*References\s*\n[\s\S]*$/i,
+  /^\s*Source:\s*.+$/gim,
+  /^\s*Reference:\s*.+$/gim,
   /You can confirm this by[\s\S]*?(?=\n\n|$)/gi,
   /As you can see,?\s*/gi,
   /It is worth noting that\s*/gi,
   /In conclusion,?\s*/gi,
 ];
 
-export function postProcessResponse(text) {
+/**
+ * Physical isolation: dual newlines between prose and fenced code (zero token bleeding).
+ */
+export function enforceLayoutIsolation(text) {
   if (!text?.trim()) return '';
 
-  let output = text;
+  let output = text.replace(/\r\n/g, '\n');
+
+  output = output.replace(/([^\n`])\s*```/g, '$1\n\n```');
+
+  return output.replace(/\n{3,}/g, '\n\n').trim();
+}
+
+const PLACEHOLDER_PATTERNS = [
+  /\/\/\s*code goes here/gi,
+  /\/\/\s*your code here/gi,
+  /\/\/\s*todo:?\s*implement/gi,
+  /#\s*code goes here/gi,
+  /\/\*\s*\.\.\.\s*\*\//g,
+];
+
+function trimShortFormResponse(text) {
+  const blocks = [];
+  const src = text;
+  let cursor = 0;
+
+  while (cursor < src.length) {
+    const openIdx = src.indexOf('```', cursor);
+    if (openIdx === -1) {
+      const tail = src.slice(cursor).trim();
+      if (tail) blocks.push({ type: 'prose', content: tail });
+      break;
+    }
+    const prose = src.slice(cursor, openIdx).trim();
+    if (prose) blocks.push({ type: 'prose', content: prose });
+    const closeIdx = src.indexOf('```', openIdx + 3);
+    if (closeIdx === -1) {
+      blocks.push({ type: 'code', content: src.slice(openIdx) });
+      break;
+    }
+    blocks.push({ type: 'code', content: src.slice(openIdx, closeIdx + 3) });
+    cursor = closeIdx + 3;
+  }
+
+  const proseLines = [];
+  let codeBlock = null;
+
+  blocks.forEach((b) => {
+    if (b.type === 'code' && !codeBlock) codeBlock = b.content;
+    if (b.type === 'prose') {
+      b.content.split('\n').forEach((line) => {
+        const t = line.trim();
+        if (t) proseLines.push(t);
+      });
+    }
+  });
+
+  const trimmedProse = proseLines.slice(0, 3).join('\n');
+  const parts = [];
+  if (trimmedProse) parts.push(trimmedProse);
+  if (codeBlock) {
+    if (parts.length) parts.push('');
+    parts.push(codeBlock);
+  }
+
+  return parts.join('\n').trim() || text.trim();
+}
+
+export function postProcessResponse(text, options = {}) {
+  if (!text?.trim()) return '';
+
+  const { shortForm = false } = options;
+  let output = enforceLayoutIsolation(text);
   const original = text;
 
   FILLER_PATTERNS.forEach((pattern) => {
+    output = output.replace(pattern, '');
+  });
+
+  PLACEHOLDER_PATTERNS.forEach((pattern) => {
     output = output.replace(pattern, '');
   });
 
@@ -658,6 +743,14 @@ export function postProcessResponse(text) {
   MODERN_REPLACEMENTS.forEach(({ pattern, replacement }) => {
     output = output.replace(pattern, replacement);
   });
+
+  output = dedupeCodeBlocksInText(output);
+  output = enforceLayoutIsolation(output);
+
+  if (shortForm) {
+    output = trimShortFormResponse(output);
+    output = enforceLayoutIsolation(output);
+  }
 
   return output.replace(/\n{3,}/g, '\n\n').trim();
 }
@@ -695,14 +788,16 @@ export function mergeResponses(geminiText, groqText) {
   return dedupeCodeBlocksInText(merged);
 }
 
-function buildSuperResponse(geminiText, groqText) {
+function buildSuperResponse(geminiText, groqText, userMessage, command) {
   const sources = [geminiText, groqText].filter(Boolean);
   if (sources.length === 0) {
     throw new Error('No AI responses available. Check your API keys and try again.');
   }
 
+  const shortForm = isShortFormQuery(userMessage, command);
+
   let merged = mergeResponses(geminiText, groqText);
-  merged = postProcessResponse(merged);
+  merged = postProcessResponse(merged, { shortForm });
 
   return merged || 'No response generated.';
 }
@@ -724,14 +819,13 @@ export async function sendMessage(options) {
   }
 
   const detailed = isDetailedQuestion(payload.userMessage, payload.command);
-  const wikiTopic = extractMainTopic(payload.userMessage, payload.language);
+  const topicKey = extractMainTopic(payload.userMessage, payload.language);
 
-  const wikiArticles =
-    detailed && wikiTopic
-      ? await fetchWikipediaArticles(payload.userMessage, payload.language).catch(() => [])
-      : [];
+  const webResults = detailed
+    ? await searchWeb(payload.userMessage, payload.language).catch(() => [])
+    : [];
 
-  const ragContext = detailed ? buildRagContext(wikiArticles, wikiTopic) : '';
+  const ragContext = detailed ? buildRagContext(webResults, topicKey) : '';
   const enrichedPayload = { ...payload, ragContext };
 
   const [geminiText, groqText] = await Promise.all([
@@ -739,7 +833,12 @@ export async function sendMessage(options) {
     hasGroq ? sendViaGroq(enrichedPayload).catch(() => null) : Promise.resolve(null),
   ]);
 
-  const text = buildSuperResponse(geminiText, groqText);
+  const text = buildSuperResponse(
+    geminiText,
+    groqText,
+    payload.userMessage,
+    payload.command
+  );
 
   return { text };
 }

@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useMemo } from 'react';
+import { enforceLayoutIsolation } from '../utils/gemini';
 
 const COLORS = {
   h2: '#00BCD4',
@@ -13,6 +14,9 @@ const COLORS = {
 
 const font = '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
 const codeFont = '"Courier New", Courier, monospace';
+
+const INLINE_TECH_PATTERN =
+  /(?<![`(\w])(\b(?:var|let|const|async|await|function|return|Promise|useState|useEffect|useCallback|useMemo|componentDidMount|componentWillUnmount|Promise\.all|fetch|JSON)\b|\d+\s*[+\-*/%]\s*\d+)(?![`\w])/g;
 
 function stripSourceLabels(text) {
   return (text || '')
@@ -44,6 +48,22 @@ function dedupeResponseText(text) {
   return unique.join('\n\n');
 }
 
+/**
+ * Ensures prose and fenced code never share a line; normalizes fence boundaries.
+ */
+function normalizeForRender(text) {
+  return enforceLayoutIsolation(dedupeResponseText(stripSourceLabels(text)));
+}
+
+function wrapInlineTechnicalTokens(segment) {
+  if (!segment?.trim()) return segment;
+
+  return segment.replace(INLINE_TECH_PATTERN, (match) => {
+    if (match.includes('`')) return match;
+    return `\`${match}\``;
+  });
+}
+
 function parseContentBlocks(text) {
   const blocks = [];
   let cursor = 0;
@@ -67,7 +87,8 @@ function parseContentBlocks(text) {
     }
 
     const lang = src.slice(openIdx + 3, langEnd).trim();
-    const codeStart = langEnd < src.length && (src[langEnd] === '\n' || src[langEnd] === '\r') ? langEnd + 1 : langEnd;
+    const codeStart =
+      langEnd < src.length && (src[langEnd] === '\n' || src[langEnd] === '\r') ? langEnd + 1 : langEnd;
     const closeIdx = src.indexOf('```', codeStart);
 
     if (closeIdx === -1) {
@@ -85,16 +106,17 @@ function parseContentBlocks(text) {
 }
 
 function renderInlineText(text) {
+  const prepared = wrapInlineTechnicalTokens(text || '');
   const parts = [];
   const regex = /(\*\*[^*]+\*\*|`[^`]+`|\[([^\]]+)\]\(([^)]+)\))/g;
   let last = 0;
   let match;
 
-  while ((match = regex.exec(text)) !== null) {
+  while ((match = regex.exec(prepared)) !== null) {
     if (match.index > last) {
       parts.push(
         <span key={`t-${last}`} style={{ color: COLORS.text }}>
-          {text.slice(last, match.index)}
+          {prepared.slice(last, match.index)}
         </span>
       );
     }
@@ -110,12 +132,15 @@ function renderInlineText(text) {
         <code
           key={`c-${match.index}`}
           style={{
+            display: 'inline',
             padding: '2px 6px',
             borderRadius: '4px',
             fontFamily: codeFont,
             fontSize: '12px',
             color: COLORS.codeText,
             background: COLORS.codeBg,
+            verticalAlign: 'baseline',
+            whiteSpace: 'nowrap',
           }}
         >
           {match[0].slice(1, -1)}
@@ -138,15 +163,15 @@ function renderInlineText(text) {
     last = match.index + match[0].length;
   }
 
-  if (last < text.length) {
+  if (last < prepared.length) {
     parts.push(
       <span key={`t-${last}`} style={{ color: COLORS.text }}>
-        {text.slice(last)}
+        {prepared.slice(last)}
       </span>
     );
   }
 
-  return parts.length > 0 ? parts : <span style={{ color: COLORS.text }}>{text}</span>;
+  return parts.length > 0 ? parts : <span style={{ color: COLORS.text }}>{prepared}</span>;
 }
 
 function CodeBlock({ code, lang, label }) {
@@ -155,11 +180,12 @@ function CodeBlock({ code, lang, label }) {
   return (
     <div
       style={{
-        margin: '16px 0',
+        margin: '20px 0',
         width: '100%',
         maxWidth: '100%',
         boxSizing: 'border-box',
         display: 'block',
+        clear: 'both',
       }}
     >
       <div
@@ -201,7 +227,10 @@ function CodeBlock({ code, lang, label }) {
   );
 }
 
-/** Split inline numbered lists onto separate lines: "1. a 2. b" → two lines */
+function BlockSpacer() {
+  return <div aria-hidden style={{ display: 'block', height: '12px', width: '100%' }} />;
+}
+
 function expandNumberedLines(content) {
   const expanded = [];
 
@@ -360,27 +389,10 @@ function ensureLeadingHeading(text) {
 
 export function AiFormattedMessage({ text }) {
   const displayText = useMemo(
-    () => ensureLeadingHeading(dedupeResponseText(stripSourceLabels(text))),
+    () => ensureLeadingHeading(normalizeForRender(text)),
     [text]
   );
   const blocks = useMemo(() => parseContentBlocks(displayText), [displayText]);
-
-  useEffect(() => {
-    console.log('[Nexus AI] AiFormattedMessage parsed', {
-      blockCount: blocks.length,
-      colors: {
-        paragraph: COLORS.text,
-        headingH2: COLORS.h2,
-        headingH3: COLORS.h3,
-        bold: COLORS.bold,
-      },
-      blocks: blocks.map((b, i) => ({
-        i,
-        type: b.type,
-        firstLine: b.type === 'prose' ? b.content.split('\n').find((l) => l.trim()) : `code:${b.lang}`,
-      })),
-    });
-  }, [displayText, blocks]);
 
   if (blocks.length === 0) {
     return (
@@ -403,20 +415,33 @@ export function AiFormattedMessage({ text }) {
         maxWidth: '100%',
       }}
     >
-      {blocks.map((block, idx) =>
-        block.type === 'code' ? (
-          <CodeBlock
-            key={`code-${idx}`}
-            code={block.code}
-            lang={block.lang}
-            label={`💻 ${block.lang && block.lang !== 'code' ? block.lang : 'code'}`}
-          />
-        ) : (
-          <div key={`prose-${idx}`} style={{ display: 'block', width: '100%' }}>
-            <ProseBlock content={block.content} />
-          </div>
-        )
-      )}
+      {blocks.map((block, idx) => {
+        const prev = blocks[idx - 1];
+        const needsSpacer = idx > 0 && prev && prev.type !== block.type;
+
+        return (
+          <React.Fragment key={`block-${idx}`}>
+            {needsSpacer && <BlockSpacer />}
+            {block.type === 'code' ? (
+              <CodeBlock
+                code={block.code}
+                lang={block.lang}
+                label={`💻 ${block.lang && block.lang !== 'code' ? block.lang : 'code'}`}
+              />
+            ) : (
+              <div
+                style={{
+                  display: 'block',
+                  width: '100%',
+                  clear: 'both',
+                }}
+              >
+                <ProseBlock content={block.content} />
+              </div>
+            )}
+          </React.Fragment>
+        );
+      })}
     </div>
   );
 }
