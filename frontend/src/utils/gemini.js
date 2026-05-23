@@ -9,42 +9,39 @@ const TEMPERATURE = 0.9;
 
 const NEXUS_SYSTEM = `You are Nexus AI, world's smartest coding assistant running in year 2026.
 
-MOST IMPORTANT RULE:
-- Read the user's question carefully
-- If question is SHORT/SIMPLE → give SHORT focused answer (no fixed headings needed)
-- If question asks for DETAIL → give full detailed answer with headings
-- NEVER use fixed headings for every answer
-- Match response length to question length
+Write like a human expert — natural, clear, and flowing (similar to ChatGPT).
 
-For SIMPLE questions like '2+2 in JS':
-→ Just answer directly in 2-3 lines with code
+RESPONSE STYLE:
+- Read the user's question first. Match length and depth to what they actually asked.
+- SHORT or simple question → short direct answer in plain prose. No headings. No essay.
+- Longer or "explain" style question → fuller answer. You may add markdown headings ONLY if they genuinely help — choose your own titles (do NOT use a fixed template like Introduction, Background, Core Concepts, Advanced Features, etc.).
+- Never force headings on every answer. Never use a rigid section checklist.
 
-For DETAILED questions like 'explain Python':
-→ Use full structured response with headings
+Example — simple: "2+2 in JavaScript" → 2–3 lines with a tiny code snippet.
+Example — detailed: "Explain Python decorators" → natural explanation; add headings only where useful.
 
-ALWAYS use 2026 modern practices:
-- Never recommend jQuery (outdated)
-- Never recommend var (use let/const)
-- Never recommend old libraries
-- Always recommend modern alternatives
-- Use latest frameworks and tools
+EDITOR CODE:
+- If the user message is general (no editor code was provided in context), answer directly — do not paste or discuss their open file.
+- Only analyze, fix, or quote their editor code when they asked about it (explain/fix/refactor commands or "my code", "this code", etc.).
 
-STRICT RULES:
-- Never repeat same example twice
-- Never show same code in two sections
-- If used in Code Examples → remove from Advanced Features
-- Each example must be UNIQUE
-- No duplicate content anywhere`;
+2026 MODERN PRACTICES:
+- Never recommend jQuery, var, XMLHttpRequest, or other outdated patterns
+- Prefer let/const, fetch, async/await, and current frameworks
+
+QUALITY:
+- No duplicate examples or repeated code blocks
+- Each code sample should appear once
+- Be accurate and practical`;
 
 const COMMAND_INSTRUCTIONS = {
   explain:
-    'Explain the editor code. Match depth to complexity — short answer if simple, structured detail if the code is large or the user needs depth.',
+    'Explain the editor code naturally. Short if the code is small; go deeper only when needed. No template headings.',
   fix:
-    'Find bugs and show the fix. Be concise for small issues; use sections only when multiple problems need explanation.',
+    'Find bugs and show the fix clearly. Be brief unless multiple issues need separation.',
   generate:
-    'Generate working code for the request. Keep it short if the ask is small; expand with examples only when needed.',
+    'Generate working code for the request. Keep it proportional to what was asked.',
   refactor:
-    'Refactor the code with clear before/after. Use headings only if the refactor is substantial.',
+    'Refactor with clear before/after. Write in a natural expert voice — headings only if they help.',
 };
 
 const STOP_WORDS = new Set([
@@ -62,14 +59,74 @@ const STOP_WORDS = new Set([
 
 const COMMAND_LABELS = /^explain this code$|^fix this bug$|^generate code$|^refactor code$/i;
 
-const LANG_WIKI_QUERY = {
-  javascript: 'JavaScript',
-  typescript: 'TypeScript',
-  python: 'Python',
-  html: 'HTML',
-  css: 'CSS',
-  json: 'JSON',
-  markdown: 'Markdown',
+/** Exact Wikipedia search phrases for known topics (message topic wins over editor language). */
+const TOPIC_WIKI_SEARCH = {
+  python: 'Python programming language',
+  javascript: 'JavaScript programming language',
+  typescript: 'TypeScript programming language',
+  react: 'React JavaScript library',
+  vue: 'Vue.js JavaScript framework',
+  angular: 'Angular web framework',
+  nodejs: 'Node.js JavaScript runtime',
+  node: 'Node.js JavaScript runtime',
+  java: 'Java programming language',
+  rust: 'Rust programming language',
+  go: 'Go programming language',
+  golang: 'Go programming language',
+  ruby: 'Ruby programming language',
+  php: 'PHP programming language',
+  swift: 'Swift programming language',
+  kotlin: 'Kotlin programming language',
+  django: 'Django web framework',
+  flask: 'Flask web framework Python',
+  fastapi: 'FastAPI Python framework',
+  html: 'HTML markup language',
+  css: 'CSS stylesheet language',
+  sql: 'SQL database language',
+  mongodb: 'MongoDB database',
+  postgresql: 'PostgreSQL database',
+  docker: 'Docker software',
+  kubernetes: 'Kubernetes',
+};
+
+const TOPIC_DETECT_ORDER = [
+  'typescript',
+  'javascript',
+  'fastapi',
+  'kubernetes',
+  'postgresql',
+  'mongodb',
+  'python',
+  'react',
+  'angular',
+  'vue',
+  'nodejs',
+  'node',
+  'django',
+  'flask',
+  'golang',
+  'kotlin',
+  'swift',
+  'rust',
+  'ruby',
+  'java',
+  'docker',
+  'php',
+  'html',
+  'css',
+  'sql',
+  'go',
+];
+
+const TOPIC_CONFLICTS = {
+  python: ['javascript', 'typescript', 'react', 'vue', 'angular', 'java', 'node.js', 'nodejs'],
+  javascript: ['python', 'java', 'rust', 'ruby', 'php'],
+  typescript: ['python', 'java', 'ruby', 'php'],
+  react: ['python', 'vue', 'angular', 'django', 'flask'],
+  java: ['javascript', 'python', 'typescript', 'react'],
+  rust: ['python', 'javascript', 'java'],
+  go: ['python', 'javascript', 'java'],
+  golang: ['python', 'javascript', 'java'],
 };
 
 const MODERN_REPLACEMENTS = [
@@ -102,20 +159,58 @@ function getGroqKey() {
   return process.env.REACT_APP_GROQ_API_KEY?.trim() || '';
 }
 
+function isAboutUserCode(userMessage, command) {
+  if (command) return true;
+
+  const msg = (userMessage || '').trim().toLowerCase();
+  return (
+    /my code|this code|the code|editor code|in my file|in this file|above code|below code|fix (this|my|the)|debug (this|my|the)|review (this|my|the)|refactor (this|my|the)|explain (this|my|the)|what.?s wrong|error in (my|this|the)|bug in (my|this|the)|issue in (my|this|the)|help with (this|my|the) code/i.test(
+      msg
+    ) || COMMAND_LABELS.test(msg)
+  );
+}
+
+function isSimpleQuestion(userMessage, command) {
+  if (isAboutUserCode(userMessage, command)) return false;
+
+  const msg = (userMessage || '').trim();
+  if (!msg) return true;
+
+  if (msg.length > 100) return false;
+
+  if (/explain|describe|detail|comprehensive|tutorial|walk me through|step by step|compare|history|best practices/i.test(msg)) {
+    return false;
+  }
+
+  const wordCount = msg.split(/\s+/).filter(Boolean).length;
+  return wordCount <= 14;
+}
+
+function shouldIncludeEditorCode(userMessage, command) {
+  return isAboutUserCode(userMessage, command);
+}
+
 function buildUserContent({ userMessage, command, code, filename, language }) {
   const parts = [];
+  const includeEditor = shouldIncludeEditorCode(userMessage, command);
 
   if (command && COMMAND_INSTRUCTIONS[command]) {
     parts.push(`Task: ${COMMAND_INSTRUCTIONS[command]}`);
   }
 
-  parts.push(`Active file: ${filename || 'untitled'}`);
-  parts.push(`Language: ${language || 'javascript'}`);
+  if (includeEditor) {
+    parts.push(`Active file: ${filename || 'untitled'}`);
+    parts.push(`Language: ${language || 'javascript'}`);
 
-  if (code?.trim()) {
-    parts.push(`Current editor code:\n\`\`\`${language || ''}\n${code}\n\`\`\``);
+    if (code?.trim()) {
+      parts.push(`Current editor code:\n\`\`\`${language || ''}\n${code}\n\`\`\``);
+    } else {
+      parts.push('(No code in the editor yet.)');
+    }
   } else {
-    parts.push('(No code in the editor yet.)');
+    parts.push(
+      'Answer the user question directly. Do not include or discuss code from the editor workspace — they are asking a general question, not about their open file.'
+    );
   }
 
   parts.push(`User question: ${userMessage}`);
@@ -124,6 +219,7 @@ function buildUserContent({ userMessage, command, code, filename, language }) {
 
 function isDetailedQuestion(userMessage, command) {
   if (command) return true;
+  if (isSimpleQuestion(userMessage, command)) return false;
 
   const msg = (userMessage || '').trim();
   if (msg.length > 100) return true;
@@ -133,68 +229,111 @@ function isDetailedQuestion(userMessage, command) {
   );
 }
 
-function buildWikipediaQueries(userMessage, language) {
-  const queries = [];
+function cleanUserMessageForTopic(userMessage) {
   let msg = (userMessage || '').trim();
-
-  if (COMMAND_LABELS.test(msg)) {
-    msg = '';
-  } else {
-    msg = msg.replace(COMMAND_LABELS, '').trim();
-  }
-
-  if (language && LANG_WIKI_QUERY[language]) {
-    queries.push(LANG_WIKI_QUERY[language]);
-  }
-
-  const words = msg
-    .toLowerCase()
-    .replace(/[^a-z0-9\s+#.-]/g, ' ')
-    .split(/\s+/)
-    .filter((w) => w.length > 2 && !STOP_WORDS.has(w));
-
-  if (words.length > 0) {
-    queries.push(words.slice(0, 6).join(' '));
-  }
-
-  if (queries.length === 0 && language && LANG_WIKI_QUERY[language]) {
-    queries.push(LANG_WIKI_QUERY[language]);
-  }
-
-  return [...new Set(queries)].slice(0, 3);
+  if (COMMAND_LABELS.test(msg)) return '';
+  return msg.replace(COMMAND_LABELS, '').trim();
 }
 
-function getRelevanceTerms(userMessage, language) {
-  const terms = [];
-  if (language && LANG_WIKI_QUERY[language]) {
-    terms.push(LANG_WIKI_QUERY[language].toLowerCase());
-    terms.push(language.toLowerCase());
+/**
+ * Main topic from the user's question (not the editor default language when they named another tech).
+ */
+export function extractMainTopic(userMessage, editorLanguage) {
+  const msg = cleanUserMessageForTopic(userMessage);
+  const haystack = `${msg} ${userMessage || ''}`.toLowerCase();
+
+  for (const key of TOPIC_DETECT_ORDER) {
+    const re = new RegExp(`\\b${key.replace('.', '\\.')}\\b`, 'i');
+    if (re.test(haystack)) {
+      if (key === 'node' && /\bnodejs\b/i.test(haystack)) continue;
+      return key === 'node' ? 'nodejs' : key;
+    }
   }
 
-  let msg = (userMessage || '').trim();
-  if (COMMAND_LABELS.test(msg)) msg = '';
-  else msg = msg.replace(COMMAND_LABELS, '').trim();
+  if (msg) {
+    const words = msg
+      .toLowerCase()
+      .replace(/[^a-z0-9\s+#.-]/g, ' ')
+      .split(/\s+/)
+      .filter((w) => w.length > 2 && !STOP_WORDS.has(w));
 
-  msg
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .split(/\s+/)
-    .filter((w) => w.length > 3 && !STOP_WORDS.has(w))
-    .forEach((w) => terms.push(w));
+    for (const word of words) {
+      if (TOPIC_WIKI_SEARCH[word]) return word;
+    }
+  }
 
+  if (editorLanguage && TOPIC_WIKI_SEARCH[editorLanguage]) {
+    return editorLanguage;
+  }
+
+  return null;
+}
+
+function getWikipediaSearchQuery(topicKey) {
+  if (!topicKey) return null;
+  if (TOPIC_WIKI_SEARCH[topicKey]) return TOPIC_WIKI_SEARCH[topicKey];
+
+  const label = topicKey.charAt(0).toUpperCase() + topicKey.slice(1);
+  return `${label} programming language`;
+}
+
+function getTopicMatchTerms(topicKey) {
+  const terms = [topicKey.toLowerCase()];
+  if (topicKey === 'javascript') terms.push('ecmascript', 'js');
+  if (topicKey === 'typescript') terms.push('typescript', 'ts');
+  if (topicKey === 'python') terms.push('python');
+  if (topicKey === 'react') terms.push('react');
+  if (topicKey === 'nodejs' || topicKey === 'node') terms.push('node.js', 'nodejs');
+  if (topicKey === 'golang' || topicKey === 'go') terms.push('go programming');
   return [...new Set(terms)];
 }
 
-function isArticleRelevant(article, relevanceTerms) {
-  if (!article?.title) return false;
+function isArticleRelevantToTopic(article, topicKey) {
+  if (!article?.title || !topicKey) return false;
 
   const title = article.title.toLowerCase();
-  if (/^example$/i.test(title) || /^sample/i.test(title)) return false;
+  const excerpt = (article.excerpt || '').toLowerCase();
+  const blob = `${title} ${excerpt}`;
 
-  if (relevanceTerms.length === 0) return true;
+  if (/^example$/i.test(title) || /^sample/i.test(title) || /^list of/i.test(title)) {
+    return false;
+  }
 
-  const blob = `${article.title} ${article.excerpt || ''}`.toLowerCase();
-  return relevanceTerms.some((term) => term.length > 2 && blob.includes(term));
+  const matchTerms = getTopicMatchTerms(topicKey);
+  const matchesTopic = matchTerms.some((term) => {
+    if (term.length <= 2) return false;
+    if (term === 'go' || term === 'js') {
+      return new RegExp(`\\b${term}\\b`, 'i').test(blob);
+    }
+    return blob.includes(term);
+  });
+
+  if (!matchesTopic) return false;
+
+  const conflicts = TOPIC_CONFLICTS[topicKey] || [];
+  for (const conflict of conflicts) {
+    const conflictInTitle = title.includes(conflict);
+    const topicInTitle = matchTerms.some((t) => t.length > 3 && title.includes(t));
+    if (conflictInTitle && !topicInTitle) return false;
+  }
+
+  if (topicKey === 'python' && title.includes('javascript') && !title.includes('python')) {
+    return false;
+  }
+  if (topicKey === 'javascript' && title === 'python' && !blob.includes('javascript')) {
+    return false;
+  }
+  if (topicKey === 'react' && title.includes('python') && !title.includes('react')) {
+    return false;
+  }
+
+  return true;
+}
+
+function buildWikipediaQueries(userMessage, editorLanguage) {
+  const topicKey = extractMainTopic(userMessage, editorLanguage);
+  const query = getWikipediaSearchQuery(topicKey);
+  return query ? [{ query, topicKey }] : [];
 }
 
 async function fetchArticleSummary(title) {
@@ -229,26 +368,30 @@ async function searchWikipediaTitles(query, limit = 3) {
   return (titles || []).slice(0, limit);
 }
 
-export async function fetchWikipediaArticles(userMessage, language) {
+export async function fetchWikipediaArticles(userMessage, editorLanguage) {
   try {
-    const queries = buildWikipediaQueries(userMessage, language);
-    const relevanceTerms = getRelevanceTerms(userMessage, language);
+    const queryPlans = buildWikipediaQueries(userMessage, editorLanguage);
+    if (queryPlans.length === 0) return [];
 
-    const titleSets = await Promise.all(queries.map((q) => searchWikipediaTitles(q, 2)));
+    const { query, topicKey } = queryPlans[0];
+    const titles = await searchWikipediaTitles(query, 5);
 
     const seenTitles = new Set();
-    const titles = [];
+    const articles = [];
 
-    titleSets.flat().forEach((t) => {
-      const key = t?.toLowerCase();
-      if (!t || seenTitles.has(key)) return;
-      if (/^example$/i.test(t)) return;
+    for (const title of titles) {
+      const key = title?.toLowerCase();
+      if (!title || seenTitles.has(key)) continue;
       seenTitles.add(key);
-      titles.push(t);
-    });
 
-    const articles = await Promise.all(titles.slice(0, 5).map((title) => fetchArticleSummary(title)));
-    return articles.filter((a) => a && isArticleRelevant(a, relevanceTerms)).slice(0, 3);
+      const article = await fetchArticleSummary(title);
+      if (article && isArticleRelevantToTopic(article, topicKey)) {
+        articles.push(article);
+      }
+      if (articles.length >= 2) break;
+    }
+
+    return articles;
   } catch {
     return [];
   }
@@ -430,8 +573,8 @@ export function mergeResponses(geminiText, groqText) {
   return dedupeCodeBlocksInText(merged);
 }
 
-function appendWikipediaReferences(text, wikiArticles) {
-  if (!wikiArticles?.length) return text;
+function appendWikipediaReferences(text, wikiArticles, topicKey) {
+  if (!wikiArticles?.length || !topicKey) return text;
 
   const refs = wikiArticles
     .map(
@@ -442,10 +585,11 @@ function appendWikipediaReferences(text, wikiArticles) {
 
   if (!refs.trim()) return text;
 
-  return `${text.trim()}\n\n## References\n\n${refs}`;
+  const topicLabel = TOPIC_WIKI_SEARCH[topicKey] || topicKey;
+  return `${text.trim()}\n\nFurther reading on **${topicLabel.split(' ')[0]}**:\n\n${refs}`;
 }
 
-function buildSuperResponse(geminiText, groqText, wikiArticles, userMessage, command) {
+function buildSuperResponse(geminiText, groqText, wikiArticles, userMessage, command, editorLanguage) {
   const sources = [geminiText, groqText].filter(Boolean);
   if (sources.length === 0) {
     throw new Error('No AI responses available. Check your API keys and try again.');
@@ -454,8 +598,9 @@ function buildSuperResponse(geminiText, groqText, wikiArticles, userMessage, com
   let merged = mergeResponses(geminiText, groqText);
   merged = postProcessResponse(merged);
 
-  if (isDetailedQuestion(userMessage, command)) {
-    merged = appendWikipediaReferences(merged, wikiArticles);
+  if (isDetailedQuestion(userMessage, command) && wikiArticles.length > 0) {
+    const topicKey = extractMainTopic(userMessage, editorLanguage);
+    merged = appendWikipediaReferences(merged, wikiArticles, topicKey);
     merged = postProcessResponse(merged);
   }
 
@@ -479,11 +624,12 @@ export async function sendMessage(options) {
   }
 
   const detailed = isDetailedQuestion(payload.userMessage, payload.command);
+  const wikiTopic = extractMainTopic(payload.userMessage, payload.language);
 
   const [geminiText, groqText, wikiArticles] = await Promise.all([
     hasGemini ? sendViaGemini(payload).catch(() => null) : Promise.resolve(null),
     hasGroq ? sendViaGroq(payload).catch(() => null) : Promise.resolve(null),
-    detailed
+    detailed && wikiTopic
       ? fetchWikipediaArticles(payload.userMessage, payload.language).catch(() => [])
       : Promise.resolve([]),
   ]);
@@ -493,7 +639,8 @@ export async function sendMessage(options) {
     groqText,
     wikiArticles || [],
     payload.userMessage,
-    payload.command
+    payload.command,
+    payload.language
   );
 
   return { text };
